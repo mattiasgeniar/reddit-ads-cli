@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
@@ -90,6 +92,17 @@ func (a *App) authLoginCmd() *cobra.Command {
 				a.cfg.RedirectURI = rewritten
 			}
 
+			// A random state per login is what actually makes the loopback callback
+			// check meaningful: a fixed value is public and any local page could forge a
+			// matching callback. --state overrides it only for scripted/testing use.
+			if state == "" {
+				s, err := randomState()
+				if err != nil {
+					return err
+				}
+				state = s
+			}
+
 			authURL := api.AuthorizeURL(a.cfg.AppID, a.cfg.RedirectURI, state, scopes)
 			code, err := a.obtainAuthCode(p, authURL, a.cfg.RedirectURI, state, manual)
 			if err != nil {
@@ -121,7 +134,7 @@ func (a *App) authLoginCmd() *cobra.Command {
 	cmd.Flags().StringVar(&redirectURI, "redirect-uri", "", "redirect URI registered on the developer app (prompted if unset; persisted)")
 	cmd.Flags().IntVar(&port, "port", 0, "override the redirect URI port for local capture (must match a registered redirect)")
 	cmd.Flags().BoolVar(&manual, "manual", false, "skip local capture and paste the code by hand (for remote/headless boxes)")
-	cmd.Flags().StringVar(&state, "state", "reddit-ads-cli", "opaque state value echoed back in the redirect")
+	cmd.Flags().StringVar(&state, "state", "", "opaque state echoed back in the redirect (default: a random per-login nonce)")
 	cmd.Flags().StringVar(&scopes, "scopes", api.V1Scopes, "comma-separated OAuth scopes")
 	return cmd
 }
@@ -158,7 +171,10 @@ func (a *App) obtainAuthCode(p *prompter, authURL, redirectURI, state string, ma
 	fmt.Fprintln(a.out, "(Browser on another machine? Paste the code or the full redirect URL here instead.)")
 
 	// Read a pasted line concurrently, so a remote browser (redirect can't reach us)
-	// still works. An empty EOF read means no manual input; let the loopback win.
+	// still works. An empty EOF read means no manual input; let the loopback win. If the
+	// loopback wins on an interactive terminal this reader stays blocked in ReadString
+	// until the process exits, which is fine here: the CLI does exactly one login per
+	// process. (Cancelling a blocking stdin read portably is not worth the fragility.)
 	pasteCh := make(chan string, 1)
 	go func() {
 		line, err := p.in.ReadString('\n')
@@ -179,6 +195,15 @@ func (a *App) obtainAuthCode(p *prompter, authURL, redirectURI, state string, ma
 	case c := <-pasteCh:
 		return c, nil
 	}
+}
+
+// randomState returns a random hex nonce for the OAuth state parameter.
+func randomState() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // withPort replaces the port in a URL, leaving scheme, host, and path intact.

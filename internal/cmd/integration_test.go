@@ -219,14 +219,16 @@ func TestAuthLoginCapturesCodeViaLoopback(t *testing.T) {
 	// Empty stdin: no paste, so the browser redirect is what completes the login.
 	app := &App{out: &out, in: strings.NewReader("")}
 	root := app.rootCmd()
+	// Pin --state so the simulated callback below carries a matching value (the default
+	// is now a random per-login nonce).
 	root.SetArgs([]string{"--config", dir, "auth", "login",
-		"--app-id", "APPID", "--app-secret", "SECRET", "--redirect-uri", redirect})
+		"--app-id", "APPID", "--app-secret", "SECRET", "--redirect-uri", redirect, "--state", "test-state"})
 
 	done := make(chan error, 1)
 	go func() { done <- root.Execute() }()
 
 	// Simulate the browser landing on the redirect, retrying until the server is up.
-	callback := fmt.Sprintf("%s?code=the-code&state=reddit-ads-cli", redirect)
+	callback := fmt.Sprintf("%s?code=the-code&state=test-state", redirect)
 	var page string
 	for i := 0; i < 200; i++ {
 		resp, err := http.Get(callback)
