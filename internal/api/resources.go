@@ -190,7 +190,7 @@ func (c *Client) Report(accountID string, req ReportRequest) ([]map[string]json.
 			Metrics []map[string]json.RawMessage `json:"metrics"`
 		} `json:"data"`
 	}
-	if err := c.Post("/ad_accounts/"+accountID+"/reports", map[string]any{"data": req}, &env); err != nil {
+	if err := c.postRead("/ad_accounts/"+accountID+"/reports", map[string]any{"data": req}, &env); err != nil {
 		return nil, err
 	}
 	return env.Data.Metrics, nil
@@ -199,7 +199,7 @@ func (c *Client) Report(accountID string, req ReportRequest) ([]map[string]json.
 // ReportRaw runs a report and returns the response body verbatim for --json.
 func (c *Client) ReportRaw(accountID string, req ReportRequest) (json.RawMessage, error) {
 	var raw json.RawMessage
-	if err := c.Post("/ad_accounts/"+accountID+"/reports", map[string]any{"data": req}, &raw); err != nil {
+	if err := c.postRead("/ad_accounts/"+accountID+"/reports", map[string]any{"data": req}, &raw); err != nil {
 		return nil, err
 	}
 	return raw, nil

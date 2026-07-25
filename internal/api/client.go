@@ -88,7 +88,13 @@ func (c *Client) ensureToken() error {
 
 // Get issues a GET and decodes the JSON body into out (out may be nil to discard).
 func (c *Client) Get(path string, out any) error {
-	return c.doJSON(http.MethodGet, path, nil, out)
+	return c.doJSON(http.MethodGet, path, nil, out, false)
+}
+
+// postRead issues a POST that is semantically a read (a report query), so it is not
+// gated by --dry-run: a dry-run report should still return data, like a GET.
+func (c *Client) postRead(path string, body, out any) error {
+	return c.doJSON(http.MethodPost, path, body, out, false)
 }
 
 // GetRaw issues a GET and returns the response body verbatim, for the --json
@@ -108,15 +114,18 @@ func (c *Client) GetRaw(path string) (json.RawMessage, error) {
 
 // Post issues a POST with a JSON body and decodes the response into out.
 func (c *Client) Post(path string, body, out any) error {
-	return c.doJSON(http.MethodPost, path, body, out)
+	return c.doJSON(http.MethodPost, path, body, out, true)
 }
 
 // Patch issues a PATCH with a JSON body and decodes the response into out.
 func (c *Client) Patch(path string, body, out any) error {
-	return c.doJSON(http.MethodPatch, path, body, out)
+	return c.doJSON(http.MethodPatch, path, body, out, true)
 }
 
-func (c *Client) doJSON(method, path string, body, out any) error {
+// doJSON marshals body, sends the request, and decodes the response into out. When
+// mutating is true, --dry-run prints the request and returns without sending it; reads
+// (mutating false) always go through, so a dry-run write can still read-modify-write.
+func (c *Client) doJSON(method, path string, body, out any, mutating bool) error {
 	var raw []byte
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -126,7 +135,7 @@ func (c *Client) doJSON(method, path string, body, out any) error {
 		raw = b
 	}
 
-	if c.DryRun && method != http.MethodGet {
+	if c.DryRun && mutating {
 		c.printDryRun(method, path, raw)
 		return nil
 	}

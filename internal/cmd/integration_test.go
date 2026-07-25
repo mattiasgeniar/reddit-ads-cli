@@ -284,6 +284,26 @@ func TestAuthLoginPersistsCredentialsFromFlags(t *testing.T) {
 	}
 }
 
+func TestReportRunsUnderDryRun(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":{"metrics":[{"impressions":100,"spend":500000}]}}`)
+	}))
+	defer srv.Close()
+
+	// A report is a read modeled as POST, so --dry-run must still return data.
+	out, err := runCLI(t, srv, "", "report", "--from", "2026-07-01", "--to", "2026-07-02",
+		"--fields", "IMPRESSIONS,SPEND", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "DRY RUN") {
+		t.Errorf("report under --dry-run should run, not print a dry-run stub:\n%s", out)
+	}
+	if !strings.Contains(out, "0.50") {
+		t.Errorf("report under --dry-run did not render metrics (spend 0.50):\n%s", out)
+	}
+}
+
 func readJSON(t *testing.T, path string) map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(path)
