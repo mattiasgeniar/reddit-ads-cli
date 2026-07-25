@@ -16,6 +16,15 @@
   microcurrency ($50 -> 50000000, $0.50 -> 500000).
 - Authorize URL carries scope=adsread,adsedit and duration=permanent.
 
+## Open-source hardening (done)
+- [x] GitHub Actions CI (test -race + coverage, gofmt, vet, build; golangci-lint) — green on main
+- [x] Release workflow via GoReleaser (v* tags, multi-OS/arch), version injected via ldflags
+- [x] golangci-lint clean (errcheck/staticcheck/revive/misspell/bodyclose/unconvert/ineffassign)
+- [x] Critical-path tests: OAuth exchange/refresh, budget microcurrency over the wire,
+      targeting RMW preserves siblings, raw --json passthrough, report money conversion,
+      declined-confirmation aborts
+- [x] MIT LICENSE, CONTRIBUTING.md, README badges + install-from-release
+
 ## Blocked on live verification
 - Dev app does not exist yet. Nothing that hits the live API (auth login exchange,
   reads, report, real writes) can be smoke-tested until a business admin creates the
