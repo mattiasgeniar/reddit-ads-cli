@@ -108,7 +108,11 @@ func (a *App) adGroupsBidCmd() *cobra.Command {
 			if !cmd.Flags().Changed("bid") {
 				return fmt.Errorf("pass --bid <dollars>")
 			}
-			data := map[string]any{"bid_value": api.DollarsToMicros(bid)}
+			micros, err := api.DollarsToMicros(bid)
+			if err != nil {
+				return fmt.Errorf("--bid: %w", err)
+			}
+			data := map[string]any{"bid_value": micros}
 			ok, err := a.confirm(fmt.Sprintf("Set bid on ad group %s to %s.", args[0], describeMicros(data)))
 			if err != nil || !ok {
 				return err
@@ -138,7 +142,11 @@ func (a *App) adGroupsBudgetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			data := map[string]any{}
 			if cmd.Flags().Changed("goal") {
-				data["goal_value"] = api.DollarsToMicros(goal)
+				goalMicros, err := api.DollarsToMicros(goal)
+				if err != nil {
+					return fmt.Errorf("--goal: %w", err)
+				}
+				data["goal_value"] = goalMicros
 			}
 			if cmd.Flags().Changed("goal-type") {
 				gt := strings.ToUpper(goalType)

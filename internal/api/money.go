@@ -11,9 +11,17 @@ import (
 const microFactor = 1_000_000
 
 // DollarsToMicros converts a dollar amount (e.g. 0.50) to microcurrency (500000).
-// It rounds to the nearest micro to avoid float drift like 0.1 -> 99999.
-func DollarsToMicros(dollars float64) int64 {
-	return int64(math.Round(dollars * microFactor))
+// It rounds to the nearest micro to avoid float drift like 0.1 -> 99999, and rejects
+// values that would overflow int64 rather than silently wrapping to a negative budget.
+func DollarsToMicros(dollars float64) (int64, error) {
+	if math.IsNaN(dollars) || math.IsInf(dollars, 0) {
+		return 0, fmt.Errorf("invalid amount %v", dollars)
+	}
+	micros := math.Round(dollars * microFactor)
+	if micros >= math.MaxInt64 || micros <= math.MinInt64 {
+		return 0, fmt.Errorf("amount %.2f is out of range", dollars)
+	}
+	return int64(micros), nil
 }
 
 // MicrosToDollars converts microcurrency (500000) back to dollars (0.50).

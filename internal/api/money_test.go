@@ -1,6 +1,9 @@
 package api
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestDollarsToMicros(t *testing.T) {
 	cases := map[float64]int64{
@@ -12,7 +15,12 @@ func TestDollarsToMicros(t *testing.T) {
 		1000.99: 1_000_990_000,
 	}
 	for dollars, want := range cases {
-		if got := DollarsToMicros(dollars); got != want {
+		got, err := DollarsToMicros(dollars)
+		if err != nil {
+			t.Errorf("DollarsToMicros(%v) errored: %v", dollars, err)
+			continue
+		}
+		if got != want {
 			t.Errorf("DollarsToMicros(%v) = %d, want %d", dollars, got, want)
 		}
 	}
@@ -21,17 +29,30 @@ func TestDollarsToMicros(t *testing.T) {
 func TestDollarsToMicrosRoundsWithoutDrift(t *testing.T) {
 	// 0.1 in float64 is 0.1000000000000000055..., a naive int64(0.1*1e6) truncates
 	// to 99999. Rounding must give 100000.
-	if got := DollarsToMicros(0.1); got != 100_000 {
+	if got, _ := DollarsToMicros(0.1); got != 100_000 {
 		t.Errorf("DollarsToMicros(0.1) = %d, want 100000", got)
 	}
-	if got := DollarsToMicros(0.29); got != 290_000 {
+	if got, _ := DollarsToMicros(0.29); got != 290_000 {
 		t.Errorf("DollarsToMicros(0.29) = %d, want 290000", got)
+	}
+}
+
+func TestDollarsToMicrosRejectsOutOfRange(t *testing.T) {
+	// A fat-fingered budget must error, not silently wrap to a negative int64.
+	for _, dollars := range []float64{1e13, -1e13, math.Inf(1), math.NaN()} {
+		if _, err := DollarsToMicros(dollars); err == nil {
+			t.Errorf("DollarsToMicros(%v) should have errored", dollars)
+		}
 	}
 }
 
 func TestMicrosToDollarsRoundTrip(t *testing.T) {
 	for _, micros := range []int64{0, 10_000, 500_000, 1_000_000, 12_340_000} {
-		if got := DollarsToMicros(MicrosToDollars(micros)); got != micros {
+		got, err := DollarsToMicros(MicrosToDollars(micros))
+		if err != nil {
+			t.Fatalf("round trip of %d micros errored: %v", micros, err)
+		}
+		if got != micros {
 			t.Errorf("round trip of %d micros = %d", micros, got)
 		}
 	}

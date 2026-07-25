@@ -104,10 +104,18 @@ func (a *App) campaignsBudgetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			data := map[string]any{}
 			if cmd.Flags().Changed("spend-cap") {
-				data["spend_cap"] = api.DollarsToMicros(spendCap)
+				micros, err := api.DollarsToMicros(spendCap)
+				if err != nil {
+					return fmt.Errorf("--spend-cap: %w", err)
+				}
+				data["spend_cap"] = micros
 			}
 			if cmd.Flags().Changed("goal") {
-				data["goal_value"] = api.DollarsToMicros(goal)
+				goalMicros, err := api.DollarsToMicros(goal)
+				if err != nil {
+					return fmt.Errorf("--goal: %w", err)
+				}
+				data["goal_value"] = goalMicros
 			}
 			if len(data) == 0 {
 				return fmt.Errorf("nothing to change: pass --spend-cap and/or --goal")
