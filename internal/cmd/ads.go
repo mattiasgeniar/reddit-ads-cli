@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mattiasgeniar/reddit-ads-cli/internal/api"
 	"github.com/spf13/cobra"
@@ -104,7 +105,11 @@ func (a *App) adsClickURLCmd() *cobra.Command {
 				data["click_url"] = clickURL
 			}
 			if cmd.Flags().Changed("query-params") {
-				data["click_url_query_parameters"] = queryParams
+				params, err := parseQueryParams(queryParams)
+				if err != nil {
+					return err
+				}
+				data["click_url_query_parameters"] = params
 			}
 			if len(data) == 0 {
 				return fmt.Errorf("nothing to change: pass --url and/or --query-params")
@@ -125,14 +130,24 @@ func (a *App) adsClickURLCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&clickURL, "url", "", "new click_url")
-	cmd.Flags().StringVar(&queryParams, "query-params", "", "new click_url_query_parameters (e.g. utm_source=reddit&utm_medium=cpc)")
+	cmd.Flags().StringVar(&queryParams, "query-params", "", "click URL query params as name=value pairs joined by & (e.g. utm_source=reddit&utm_medium=cpc)")
 	return cmd
 }
 
-func (a *App) patchAdStatus(id, status string) error {
-	client, err := a.apiClient()
-	if err != nil {
-		return err
+// parseQueryParams turns a query string like "utm_source=reddit&utm_medium=cpc" into the
+// array of {name, value} objects Reddit's click_url_query_parameters field requires;
+// sending a bare string is rejected by the API. Order is preserved.
+func parseQueryParams(s string) ([]map[string]string, error) {
+	var out []map[string]string
+	for _, pair := range strings.Split(s, "&") {
+		if pair == "" {
+			continue
+		}
+		name, value, found := strings.Cut(pair, "=")
+		if !found || name == "" {
+			return nil, fmt.Errorf("invalid query param %q: want name=value", pair)
+		}
+		out = append(out, map[string]string{"name": name, "value": value})
 	}
-	return client.PatchAd(id, map[string]any{"configured_status": status})
+	return out, nil
 }

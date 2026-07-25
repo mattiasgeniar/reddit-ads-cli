@@ -284,6 +284,33 @@ func TestAuthLoginPersistsCredentialsFromFlags(t *testing.T) {
 	}
 }
 
+func TestAdsClickURLSendsQueryParamArray(t *testing.T) {
+	captured := make(chan capturedRequest, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		captured <- capturedRequest{r.Method, r.URL.Path, body}
+		_, _ = io.WriteString(w, `{"data":{"id":"ad_1"}}`)
+	}))
+	defer srv.Close()
+
+	// Reddit requires an array of {name,value} objects here, not a raw query string.
+	_, err := runCLI(t, srv, "", "ads", "click-url", "ad_1", "--query-params", "utm_source=reddit&utm_medium=cpc", "--yes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := <-captured
+	data, _ := req.body["data"].(map[string]any)
+	params, ok := data["click_url_query_parameters"].([]any)
+	if !ok || len(params) != 2 {
+		t.Fatalf("click_url_query_parameters not sent as a 2-element array: %#v", data["click_url_query_parameters"])
+	}
+	first, _ := params[0].(map[string]any)
+	if first["name"] != "utm_source" || first["value"] != "reddit" {
+		t.Errorf("first query param = %#v, want name=utm_source value=reddit", first)
+	}
+}
+
 func TestReportRunsUnderDryRun(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"data":{"metrics":[{"impressions":100,"spend":500000}]}}`)
