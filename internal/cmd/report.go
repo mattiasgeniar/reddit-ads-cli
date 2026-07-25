@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/mattiasgeniar/reddit-ads-cli/internal/api"
@@ -28,10 +29,22 @@ var byShorthand = map[string]string{
 	"gender":    "GENDER",
 }
 
-// microMetrics are the report metric keys (lowercase) scaled by 1e6; they render as
-// dollars. The CONVERSION_*_TOTAL_VALUE keys are scaled by 100 instead, handled below.
-var microMetrics = map[string]bool{
-	"spend": true, "cpc": true, "cpv": true, "ecpm": true,
+// isMicroMetric reports whether a report column holds a microcurrency money value
+// (scaled by 1e6), so it renders as dollars. Reddit's money metrics are all spend or
+// "cost per X": spend / *_spend, cost_per_*, and the cp*/ecp* family (cpc, cpv, cpm,
+// cpa, ecpm, ecpa, ...) either standalone or as a trailing segment like
+// conversion_purchase_ecpa. Matching the trailing segment covers metrics beyond the
+// defaults without misclassifying counts (clicks, impressions, reach, ctr, frequency).
+// CONVERSION_*_TOTAL_VALUE is scaled by 100, not 1e6, and is handled in formatReportCell.
+func isMicroMetric(key string) bool {
+	if strings.HasPrefix(key, "cost_per_") {
+		return true
+	}
+	last := key
+	if i := strings.LastIndex(key, "_"); i >= 0 {
+		last = key[i+1:]
+	}
+	return last == "spend" || strings.HasPrefix(last, "cp") || strings.HasPrefix(last, "ecp")
 }
 
 func (a *App) reportCmd() *cobra.Command {
@@ -126,21 +139,22 @@ func (a *App) renderReport(rows []map[string]json.RawMessage, breakdowns, fields
 	}
 }
 
-// formatReportCell renders one metric value, converting money keys to dollars.
+// formatReportCell renders one metric value, converting money keys to dollars. Money
+// metrics decode through float64: averaged cost fields (ECPM, CPC, CPV) come back
+// fractional in micros, and decoding those straight into int64 fails, which used to
+// leak the raw microcurrency number into the table.
 func formatReportCell(key string, raw json.RawMessage) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return "-"
 	}
-	if microMetrics[key] {
-		var micros int64
-		if err := json.Unmarshal(raw, &micros); err == nil {
-			return api.FormatMicros(micros)
+	if isMicroMetric(key) {
+		if v, ok := jsonNumber(raw); ok {
+			return api.FormatMicros(int64(math.Round(v)))
 		}
 	}
 	if strings.HasPrefix(key, "conversion_") && strings.HasSuffix(key, "_total_value") {
-		var cents int64
-		if err := json.Unmarshal(raw, &cents); err == nil {
-			return fmt.Sprintf("%.2f", api.CentsToDollars(cents))
+		if v, ok := jsonNumber(raw); ok {
+			return fmt.Sprintf("%.2f", api.CentsToDollars(int64(math.Round(v))))
 		}
 	}
 	// Strings come quoted; numbers and everything else print as their JSON literal.
@@ -149,6 +163,15 @@ func formatReportCell(key string, raw json.RawMessage) string {
 		return s
 	}
 	return strings.TrimSpace(string(raw))
+}
+
+// jsonNumber decodes a JSON number (integer or fractional) as a float64.
+func jsonNumber(raw json.RawMessage) (float64, bool) {
+	var v float64
+	if err := json.Unmarshal(raw, &v); err == nil {
+		return v, true
+	}
+	return 0, false
 }
 
 // normalizeReportTime turns YYYY-MM-DD into YYYY-MM-DDTHH:00:00Z, or passes through a
