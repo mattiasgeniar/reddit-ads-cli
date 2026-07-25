@@ -46,6 +46,26 @@ are expected to pass it. Install it from https://golangci-lint.run.
 - New commands support `--json`, and every write supports `--dry-run` and confirms unless
   `--yes` is passed. Keep that contract.
 
+## Secret scanning
+
+CI runs [TruffleHog](https://github.com/trufflesecurity/trufflehog) on every push and
+PR and fails the build on any detected secret (`.github/workflows/secret-scan.yml`).
+`config.json` and `token.json` are gitignored, but this is the belt to that suspenders:
+it catches a key pasted into a test, a `.env` committed by accident, or a private key in
+a fixture.
+
+Catch it before it ever leaves your machine with the local hook:
+
+```
+pip install pre-commit          # or: brew install pre-commit
+brew install trufflehog         # or: curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
+pre-commit install --hook-type pre-commit --hook-type pre-push
+```
+
+That wires `.pre-commit-config.yaml` in as a pre-commit and pre-push scan. If it ever
+flags a real value, do not weaken the scan: remove the secret, rotate it, and rewrite
+the offending commit.
+
 ## Pull requests
 
 - One focused change per PR. Keep the commit history readable.

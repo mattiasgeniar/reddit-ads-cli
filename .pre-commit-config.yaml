@@ -1,0 +1,15 @@
+# Local secret-scanning net, so a credential never leaves your machine.
+# One-time setup (see CONTRIBUTING.md):
+#   pip install pre-commit          # or: brew install pre-commit
+#   brew install trufflehog         # or the install script in CONTRIBUTING.md
+#   pre-commit install --hook-type pre-commit --hook-type pre-push
+repos:
+  - repo: local
+    hooks:
+      - id: trufflehog
+        name: TruffleHog secret scan
+        description: Scan staged/outgoing changes for secrets before they leave the machine.
+        entry: trufflehog git file://. --since-commit HEAD --results=verified,unknown,unverified --fail --no-update
+        language: system
+        pass_filenames: false
+        stages: [pre-commit, pre-push]
