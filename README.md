@@ -1,5 +1,11 @@
 # reddit-ads
 
+[![CI](https://github.com/mattiasgeniar/reddit-ads-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mattiasgeniar/reddit-ads-cli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/mattiasgeniar/reddit-ads-cli?sort=semver)](https://github.com/mattiasgeniar/reddit-ads-cli/releases)
+[![Go Report Card](https://goreportcard.com/badge/github.com/mattiasgeniar/reddit-ads-cli)](https://goreportcard.com/report/github.com/mattiasgeniar/reddit-ads-cli)
+[![Go version](https://img.shields.io/github/go-mod/go-version/mattiasgeniar/reddit-ads-cli)](go.mod)
+[![License: MIT](https://img.shields.io/github/license/mattiasgeniar/reddit-ads-cli)](LICENSE)
+
 A single-binary Go CLI for the [Reddit Ads API v3](https://ads-api.reddit.com/docs/v3/).
 It manages campaigns, ad groups, ads, subreddit targeting, budgets and bids, and pulls
 performance reports, all from a terminal or an agent. After a one-time OAuth
@@ -11,11 +17,22 @@ create campaigns or creatives.
 
 ## Install
 
+Download a prebuilt binary for your platform from the
+[releases page](https://github.com/mattiasgeniar/reddit-ads-cli/releases), or install
+with Go:
+
 ```
-make install    # builds and copies reddit-ads into ~/bin
+go install github.com/mattiasgeniar/reddit-ads-cli/cmd/reddit-ads@latest
 ```
 
-Or just `make build` for a local `./reddit-ads`.
+Or build from a clone:
+
+```
+make install    # builds and copies reddit-ads into ~/bin
+make build      # just a local ./reddit-ads
+```
+
+Requires Go 1.26+ to build from source.
 
 ## One-time authorization
 
@@ -138,6 +155,26 @@ because getting it wrong is a 1,000,000x budget error.
 ## A word on testing
 
 There is no sandbox and no test mode for the Reddit Ads API. Every write touches a live
-ad account with real spend. The client is unit-tested against fixtures, the money
-conversion, targeting merge, and pagination have real tests, and any live smoke test
-should run against a paused campaign with `--dry-run` first.
+ad account with real spend. The client is unit-tested against `httptest` fixtures, the
+money conversion, targeting merge, pagination, OAuth exchange, and the write commands
+(budget microcurrency, targeting read-modify-write, confirmation) all have real tests,
+and any live smoke test should run against a paused campaign with `--dry-run` first.
+
+Run the same checks CI runs:
+
+```
+gofmt -l internal/ cmd/     # prints nothing when clean
+go vet ./...
+go test -race ./...
+golangci-lint run ./...     # config in .golangci.yml
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: no live-API tests, keep the
+money/targeting/pagination tests green, and every write keeps its `--dry-run` and
+confirmation behavior.
+
+## License
+
+[MIT](LICENSE) &copy; Mattias Geniar.
