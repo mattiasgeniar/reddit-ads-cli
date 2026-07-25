@@ -114,6 +114,26 @@ Base URL `https://ads-api.reddit.com/api/v3`, docs at https://ads-api.reddit.com
   groups and CBO campaigns on 2026-07-13, and campaign objective enums change on
   2026-09-30.
 
+### Field shapes verified during the v1 build (against the spec)
+
+Load-bearing details that cost a lookup, so they do not need re-discovering:
+
+- **Money fields are JSON integers, nullable**, not strings: `bid_value`, `goal_value`,
+  `spend_cap` come back as `"bid_value": 500000` (or `null`). The client models them as
+  `*int64`.
+- **`GET /me` exposes the account handle as `reddit_username` / `reddit_user_id`**, not
+  `username`. Its top-level `id` is the ads user id. Wrapped in `{"data": {...}}`.
+- **There is no flat "list my ad accounts" endpoint.** Fan out: `GET /me/businesses`,
+  then `GET /businesses/{id}/ad_accounts` per business.
+- **Report response is `data.metrics[]`**, an array of flat rows keyed by the
+  **lowercase** field name (`spend`, `clicks`, `ctr`) plus lowercase breakdown keys,
+  even though the request `fields[]`/`breakdowns[]` are UPPERCASE enums. Request dates
+  must be `YYYY-MM-DDTHH:00:00Z` (hourly). Request body is `{"data": {starts_at, ends_at,
+  fields, breakdowns, time_zone_id}}`; writes are wrapped in `{"data": ...}` too.
+- **`targeting.communities` / `excluded_communities` are arrays of string ids** (`t5_...`).
+  The full targeting object also carries `gender`, `view_modes`, `locations`,
+  `suppression_event_types`, etc.; the read-modify-write must preserve all of them.
+
 ### The OpenAPI spec
 
 There is no official machine-readable spec published by Reddit. A third-party,
