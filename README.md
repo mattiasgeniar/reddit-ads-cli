@@ -131,7 +131,7 @@ reddit-ads auth        login|status|refresh
 reddit-ads accounts    list
 reddit-ads campaigns   list|get|pause|resume|budget
 reddit-ads adgroups    list|get|pause|resume|bid|budget
-reddit-ads adgroups    targeting show|add-community|remove-community|exclude-community
+reddit-ads adgroups    targeting show|add-community|remove-community|exclude-community|unexclude-community
 reddit-ads ads         list|get|pause|resume|click-url
 reddit-ads communities search|suggest
 reddit-ads report      --from --to --fields --breakdowns --by

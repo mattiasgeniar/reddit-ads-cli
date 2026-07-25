@@ -109,6 +109,7 @@ reddit-ads adgroups targeting show ag_abc123 --json
 reddit-ads adgroups targeting add-community ag_abc123 t5_2qh1i --dry-run
 reddit-ads adgroups targeting remove-community ag_abc123 t5_2qh1i --yes
 reddit-ads adgroups targeting exclude-community ag_abc123 t5_2qh0u --yes
+reddit-ads adgroups targeting unexclude-community ag_abc123 t5_2qh0u --yes
 ```
 
 ## Budgets, bids, status, click URLs

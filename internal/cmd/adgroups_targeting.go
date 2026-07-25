@@ -23,6 +23,8 @@ func (a *App) adGroupsTargetingCmd() *cobra.Command {
 			api.FieldCommunities, api.RemoveFromTargetingList),
 		a.targetingEditCmd("exclude-community", "Add communities to the exclusion list",
 			api.FieldExcludedCommunities, api.AddToTargetingList),
+		a.targetingEditCmd("unexclude-community", "Remove communities from the exclusion list",
+			api.FieldExcludedCommunities, api.RemoveFromTargetingList),
 	)
 	return cmd
 }
