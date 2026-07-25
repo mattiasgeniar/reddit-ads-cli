@@ -137,7 +137,7 @@ reddit-ads communities search|suggest
 reddit-ads report      --from --to --fields --breakdowns --by
 ```
 
-Global flags: `--json`, `--account`, `--profile`, `--yes`, `--dry-run`, `--config`.
+Global flags: `--json`, `--account`, `--yes`, `--dry-run`, `--config`.
 
 ### Reading
 

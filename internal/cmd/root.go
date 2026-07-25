@@ -22,7 +22,6 @@ type App struct {
 
 	jsonOut   bool
 	account   string
-	profile   string
 	yes       bool
 	dryRun    bool
 	configDir string
@@ -59,7 +58,6 @@ func (a *App) rootCmd() *cobra.Command {
 	pf := root.PersistentFlags()
 	pf.BoolVar(&a.jsonOut, "json", false, "output raw JSON instead of a table")
 	pf.StringVar(&a.account, "account", "", "ad account id (overrides default_ad_account_id)")
-	pf.StringVar(&a.profile, "profile", "", "profile id (overrides default_profile_id)")
 	pf.BoolVar(&a.yes, "yes", false, "skip the confirmation prompt on writes")
 	pf.BoolVar(&a.dryRun, "dry-run", false, "print the request that would be sent, do not send it")
 	pf.StringVar(&a.configDir, "config", "", "config directory (default ~/.config/reddit-ads)")
