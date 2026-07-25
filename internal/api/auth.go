@@ -13,14 +13,15 @@ import (
 )
 
 // Reddit's OAuth endpoints live on www.reddit.com, not on the ads-api host.
-const (
-	authorizeURL   = "https://www.reddit.com/api/v1/authorize"
-	accessTokenURL = "https://www.reddit.com/api/v1/access_token"
+const authorizeURL = "https://www.reddit.com/api/v1/authorize"
 
-	// V1Scopes are the scopes v1 needs. These are Reddit's real ads scopes, NOT the
-	// ads:read / ads:manage that third-party blog posts repeat.
-	V1Scopes = "adsread,adsedit"
-)
+// accessTokenURL is a var, not a const, only so tests can point the token exchange at
+// an httptest server. Production never changes it.
+var accessTokenURL = "https://www.reddit.com/api/v1/access_token"
+
+// V1Scopes are the scopes v1 needs. These are Reddit's real ads scopes, NOT the
+// ads:read / ads:manage that third-party blog posts repeat.
+const V1Scopes = "adsread,adsedit"
 
 // AuthorizeURL builds the URL the user opens once to grant access. duration=permanent
 // makes Reddit return a refresh token. state is echoed back in the redirect so the

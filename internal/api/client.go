@@ -44,10 +44,14 @@ func New(cfg *config.Config, out io.Writer) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	base := DefaultBaseURL
+	if cfg.BaseURL != "" {
+		base = strings.TrimRight(cfg.BaseURL, "/")
+	}
 	return &Client{
 		cfg:        cfg,
 		http:       &http.Client{Timeout: 60 * time.Second},
-		base:       DefaultBaseURL,
+		base:       base,
 		token:      tok,
 		Out:        out,
 		maxRetries: 4,

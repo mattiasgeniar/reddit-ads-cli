@@ -1,0 +1,170 @@
+package cmd
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// capturedRequest records what a fake API server received, so a test can assert on
+// the exact request body a write command produced.
+type capturedRequest struct {
+	method string
+	path   string
+	body   map[string]any
+}
+
+// runCLI runs the CLI against a fake API server with a temp config that already holds
+// a valid token (so no refresh hits the real reddit.com), and returns stdout.
+func runCLI(t *testing.T, server *httptest.Server, stdin string, args ...string) (string, error) {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.json"), `{
+		"client_id":"id","client_secret":"secret","refresh_token":"RT",
+		"default_ad_account_id":"acc_1","user_agent":"test"
+	}`)
+	// A far-future expiry keeps ensureToken from refreshing.
+	writeFile(t, filepath.Join(dir, "token.json"), `{"access_token":"AT","expires_at":"2999-01-01T00:00:00Z"}`)
+
+	t.Setenv("REDDIT_ADS_BASE_URL", server.URL)
+
+	var out bytes.Buffer
+	app := &App{out: &out, in: strings.NewReader(stdin)}
+	root := app.rootCmd()
+	root.SetArgs(append([]string{"--config", dir}, args...))
+	err := root.Execute()
+	return out.String(), err
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCampaignsListJSONIsRawPassthrough(t *testing.T) {
+	// The fake campaign carries created_at, a field the CLI's struct does not model.
+	// --json must still surface it: it is a verbatim passthrough, not a re-serialized
+	// subset.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ad_accounts/acc_1/campaigns" {
+			_, _ = io.WriteString(w, `{"data":[{"id":"cmp_1","name":"Test","configured_status":"ACTIVE","created_at":"2026-01-01T00:00:00Z"}],"pagination":{}}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	out, err := runCLI(t, srv, "", "campaigns", "list", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "created_at") {
+		t.Errorf("--json dropped an unmodeled field; got:\n%s", out)
+	}
+}
+
+func TestCampaignsBudgetSendsMicrocurrency(t *testing.T) {
+	captured := make(chan capturedRequest, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		captured <- capturedRequest{r.Method, r.URL.Path, body}
+		_, _ = io.WriteString(w, `{"data":{"id":"cmp_1"}}`)
+	}))
+	defer srv.Close()
+
+	// $50.00 must be sent as 50000000 micros. A 1e6 error here is a real budget bug.
+	_, err := runCLI(t, srv, "", "campaigns", "budget", "cmp_1", "--spend-cap", "50", "--yes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := <-captured
+	if got.method != http.MethodPatch || got.path != "/campaigns/cmp_1" {
+		t.Fatalf("wrong request: %s %s", got.method, got.path)
+	}
+	data, _ := got.body["data"].(map[string]any)
+	if data["spend_cap"].(float64) != 50000000 {
+		t.Errorf("spend_cap = %v, want 50000000 micros", data["spend_cap"])
+	}
+}
+
+func TestTargetingAddCommunityPreservesSiblingsOverTheWire(t *testing.T) {
+	captured := make(chan capturedRequest, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/ad_groups/ag_1" {
+			_, _ = io.WriteString(w, `{"data":{"id":"ag_1","targeting":{"gender":["FEMALE"],"communities":["t5_old"]}}}`)
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		captured <- capturedRequest{r.Method, r.URL.Path, body}
+		_, _ = io.WriteString(w, `{"data":{"id":"ag_1"}}`)
+	}))
+	defer srv.Close()
+
+	_, err := runCLI(t, srv, "", "adgroups", "targeting", "add-community", "ag_1", "t5_new", "--yes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := <-captured
+	data := got.body["data"].(map[string]any)
+	targeting := data["targeting"].(map[string]any)
+
+	if _, ok := targeting["gender"]; !ok {
+		t.Error("read-modify-write dropped the gender sibling field")
+	}
+	comms := targeting["communities"].([]any)
+	if len(comms) != 2 {
+		t.Errorf("communities = %v, want old + new", comms)
+	}
+}
+
+func TestReportTableConvertsSpendToDollars(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/ad_accounts/acc_1/reports" {
+			_, _ = io.WriteString(w, `{"data":{"metrics":[{"impressions":1000,"clicks":10,"spend":1500000,"cpc":150000}]}}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	out, err := runCLI(t, srv, "", "report", "--from", "2026-07-01", "--to", "2026-07-25",
+		"--fields", "IMPRESSIONS,CLICKS,SPEND,CPC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1500000 micros is $1.50; a table showing 1500000 would mean no conversion.
+	if !strings.Contains(out, "1.50") {
+		t.Errorf("spend not converted to dollars; got:\n%s", out)
+	}
+	if strings.Contains(out, "1500000") {
+		t.Errorf("raw microcurrency leaked into the table; got:\n%s", out)
+	}
+}
+
+func TestWriteAbortsWhenUserDeclinesConfirmation(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		_, _ = io.WriteString(w, `{"data":{}}`)
+	}))
+	defer srv.Close()
+
+	// Answering "n" (no --yes) must send nothing.
+	_, err := runCLI(t, srv, "n\n", "campaigns", "pause", "cmp_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hits != 0 {
+		t.Errorf("declined confirmation still sent %d requests", hits)
+	}
+}

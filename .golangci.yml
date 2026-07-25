@@ -1,0 +1,43 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - unconvert
+    - bodyclose
+    - revive
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    errcheck:
+      # Writes to stdout/buffers and closing a response body we have already read
+      # cannot meaningfully fail here; not checking them is idiomatic.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*net/http.Response).Body.Close
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*text/tabwriter.Writer).Flush
+
+  exclusions:
+    generated: lax
+    rules:
+      # Test fixtures deliberately ignore some errors for brevity.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - bodyclose
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

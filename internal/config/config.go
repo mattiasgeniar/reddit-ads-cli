@@ -21,6 +21,9 @@ type Config struct {
 	DefaultAdAccountID string `json:"default_ad_account_id,omitempty"`
 	DefaultProfileID   string `json:"default_profile_id,omitempty"`
 	UserAgent          string `json:"user_agent,omitempty"`
+	// BaseURL overrides the API root. Empty means the production default. Mainly for
+	// tests and staging; not something a normal user sets.
+	BaseURL string `json:"base_url,omitempty"`
 
 	// dir is the config directory these files were loaded from, so Save writes back
 	// to the same place. Not serialized.
@@ -89,6 +92,7 @@ func (c *Config) applyEnv() {
 	envOverride(&c.DefaultAdAccountID, "REDDIT_ADS_ACCOUNT_ID")
 	envOverride(&c.DefaultProfileID, "REDDIT_ADS_PROFILE_ID")
 	envOverride(&c.UserAgent, "REDDIT_ADS_USER_AGENT")
+	envOverride(&c.BaseURL, "REDDIT_ADS_BASE_URL")
 }
 
 func envOverride(target *string, key string) {

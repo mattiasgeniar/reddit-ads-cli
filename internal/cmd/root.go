@@ -101,17 +101,6 @@ func (a *App) accountID() (string, error) {
 	return "", fmt.Errorf("no ad account: pass --account or set default_ad_account_id in config")
 }
 
-// profileID resolves the profile: --profile flag, else default_profile_id.
-func (a *App) profileID() (string, error) {
-	if a.profile != "" {
-		return a.profile, nil
-	}
-	if a.cfg.DefaultProfileID != "" {
-		return a.cfg.DefaultProfileID, nil
-	}
-	return "", fmt.Errorf("no profile: pass --profile or set default_profile_id in config")
-}
-
 // confirm returns true if the user confirms a write. --yes and --dry-run skip the
 // prompt (dry-run because nothing is sent anyway).
 func (a *App) confirm(action string) (bool, error) {

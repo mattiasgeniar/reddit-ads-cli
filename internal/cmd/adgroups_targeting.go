@@ -92,7 +92,7 @@ func (a *App) targetingEditCmd(use, short string, field api.TargetingListField, 
 				return err
 			}
 
-			if err := client.PatchAdGroup(adGroupID, map[string]any{"targeting": json.RawMessage(updated)}); err != nil {
+			if err := client.PatchAdGroup(adGroupID, map[string]any{"targeting": updated}); err != nil {
 				return err
 			}
 			a.reportWrite("adgroup", adGroupID, fmt.Sprintf("targeting.%s now [%s]", field, strings.Join(after, ", ")))
