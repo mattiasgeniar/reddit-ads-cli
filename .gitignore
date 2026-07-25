@@ -1,0 +1,5 @@
+/reddit-ads
+/dist/
+*.test
+config.json
+token.json
