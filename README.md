@@ -6,14 +6,19 @@
 [![Go version](https://img.shields.io/github/go-mod/go-version/mattiasgeniar/reddit-ads-cli)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/mattiasgeniar/reddit-ads-cli)](LICENSE)
 
-A single-binary Go CLI for the [Reddit Ads API v3](https://ads-api.reddit.com/docs/v3/).
-It manages campaigns, ad groups, ads, subreddit targeting, budgets and bids, and pulls
-performance reports, all from a terminal or an agent. After a one-time OAuth
-authorization there is no browser in the loop.
+I want to manage my Reddit ads from a terminal: change subreddit targeting, nudge
+budgets and bids, pause and resume, and pull click and impression numbers, all without
+clicking through Ads Manager. The [Reddit Ads API v3](https://ads-api.reddit.com/docs/v3/)
+does every bit of that, but there's no official CLI. The third-party MCP servers that
+exist broker your OAuth token through someone else's infrastructure, and this is ad
+spend, so I built my own.
 
-v1 is deliberately scoped to reads and safe writes: reporting and listing, pause and
-resume, budget and bid changes, click-URL edits, and ad group targeting. It does not
-create campaigns or creatives.
+`reddit-ads` is a single static Go binary. After a one-time OAuth authorization, there's
+no browser in the loop.
+
+v1 sticks to reads and safe writes: reporting and listing, pause and resume, budget and
+bid changes, click-URL edits, and ad group targeting. It doesn't create campaigns or
+creatives yet.
 
 ## Install
 
@@ -37,23 +42,34 @@ Requires Go 1.26+ to build from source.
 ## One-time authorization
 
 You need a developer app first. A business admin with a verified account creates it in
-Ads Manager under Business > Developer Portal, and notes the client id, client secret,
-and a redirect URI. The redirect URI never has to serve anything: you copy the `code`
-out of the address bar by hand. It only has to match what you registered.
-
-Then:
+Ads Manager under Business > Developer Portal, and notes the client id and client
+secret. For the redirect URI, register this exact value and you're done thinking about
+it:
 
 ```
-reddit-ads auth login \
-  --client-id YOUR_ID \
-  --client-secret YOUR_SECRET \
-  --redirect-uri https://your-registered-redirect
+http://localhost:8080/reddit-ads/callback
 ```
 
-It prints an authorize URL. Open it, click Allow, and you land on your redirect URI
-with `?code=...` in the address bar. Copy that code value (strip a trailing `#_` if
-present, it is valid for ten minutes and single use) and paste it back. The CLI
-exchanges it for a permanent refresh token and stores everything.
+It never has to serve anything. You copy the `code` out of the address bar by hand, so
+nothing listens on that port.
+
+Then just run:
+
+```
+reddit-ads auth login
+```
+
+It asks for the client id, the secret (hidden while you type), and the redirect URI
+(hit enter to accept the default above), then prints an authorize URL. Open it, click
+Allow, and you land on your redirect URI with `?code=...` in the address bar. Paste the
+whole URL back, or just the code if you'd rather. That's it, the CLI exchanges it for a
+permanent refresh token and stores everything, so you only do this once.
+
+Prefer flags for CI? They still work, and skip every prompt:
+
+```
+reddit-ads auth login --client-id ID --client-secret SECRET --redirect-uri URL
+```
 
 Check it worked:
 
@@ -66,18 +82,27 @@ The v1 scopes are `adsread,adsedit`. These are Reddit's real ads scopes, not the
 
 ## Configuration
 
-Credentials and the volatile token live in separate files so a token refresh can never
+Credentials and the volatile token live in separate files, so a token refresh can never
 rewrite your credentials.
 
 - `~/.config/reddit-ads/config.json` (mode 600): `client_id`, `client_secret`,
-  `refresh_token`, `default_ad_account_id`, `default_profile_id`, optional `user_agent`.
+  `refresh_token`, `redirect_uri`, `default_ad_account_id`, `default_profile_id`,
+  optional `user_agent`.
 - `~/.config/reddit-ads/token.json` (mode 600): cached access token and its expiry.
+
+Both files are written 600 (owner read/write only) and the `reddit-ads` directory is
+created 700, so other users on the box can't read your secret or even list the
+directory. That holds regardless of how `~/.config` itself is set: a 600 file inside a
+700 directory is protected by its own permissions, not the parent's. On load, if either
+file was created or hand-edited with looser permissions, the CLI tightens it back to 600
+rather than trusting it as-is.
 
 Environment variables override the files, so cron and CI need no home directory:
 `REDDIT_ADS_CLIENT_ID`, `REDDIT_ADS_CLIENT_SECRET`, `REDDIT_ADS_REFRESH_TOKEN`,
-`REDDIT_ADS_ACCOUNT_ID`, `REDDIT_ADS_PROFILE_ID`, `REDDIT_ADS_USER_AGENT`.
+`REDDIT_ADS_REDIRECT_URI`, `REDDIT_ADS_ACCOUNT_ID`, `REDDIT_ADS_PROFILE_ID`,
+`REDDIT_ADS_USER_AGENT`.
 
-Set a default account so you can drop `--account` from every command:
+Set a default account so you can drop `--account` off every command:
 
 ```
 reddit-ads accounts list
@@ -126,9 +151,10 @@ exactly as Reddit returns it. Metrics can take up to six hours to stabilize.
 
 ### Targeting
 
-Subreddit targeting lives on the ad group, and sending targeting replaces it wholesale,
-so add and remove are read-modify-write under the hood: every other targeting field
-round-trips untouched.
+Subreddit targeting lives on the ad group, and the API replaces the whole targeting
+object on every write. So add and remove read it first, change the one list you asked
+for, and send it back whole. Every other targeting field you had set (gender, interests,
+geolocations, and the rest) survives untouched.
 
 ```
 reddit-ads communities search technology          # find the targeting id
@@ -152,10 +178,10 @@ Budgets and bids are given and printed in dollars. Internally Reddit uses
 microcurrency (a dollar is 1,000,000), and the conversion lives in one tested helper,
 because getting it wrong is a 1,000,000x budget error.
 
-## A word on testing
+## Testing
 
-There is no sandbox and no test mode for the Reddit Ads API. Every write touches a live
-ad account with real spend. The client is unit-tested against `httptest` fixtures, the
+There is no sandbox and no test mode for the Reddit Ads API. Every write hits a live ad
+account with real spend. So the client is unit-tested against `httptest` fixtures, the
 money conversion, targeting merge, pagination, OAuth exchange, and the write commands
 (budget microcurrency, targeting read-modify-write, confirmation) all have real tests,
 and any live smoke test should run against a paused campaign with `--dry-run` first.

@@ -38,9 +38,10 @@ reddit-ads auth status     # who the token belongs to, when the access token exp
 reddit-ads auth refresh    # force a new access token from the stored refresh token
 ```
 
-If `auth status` errors with "not authorized", the user must run `reddit-ads auth login`
-themselves (it needs a developer app's client id/secret and a browser). Scopes are
-`adsread,adsedit`.
+If `auth status` errors with "not authorized", the user runs `reddit-ads auth login`
+themselves. It is interactive: it prompts for the developer app's client id and secret,
+prints an authorize URL to open in a browser, and takes the pasted code back. You cannot
+do this step for them. Scopes are `adsread,adsedit`.
 
 ## Output contract for agents
 
