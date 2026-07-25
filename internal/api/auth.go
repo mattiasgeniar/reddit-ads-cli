@@ -22,6 +22,11 @@ const (
 	V1Scopes = "adsread,adsedit"
 )
 
+// oauthClient talks to the OAuth token endpoint. It has its own timeout because
+// postToken is on the critical path of every API call (ensureToken refreshes through
+// it), so a stalled token endpoint must not hang the command forever.
+var oauthClient = &http.Client{Timeout: 60 * time.Second}
+
 // tokenEndpoint is the OAuth token URL, honoring a config override (proxy/test).
 func tokenEndpoint(cfg *config.Config) string {
 	if cfg.TokenURL != "" {
@@ -109,7 +114,7 @@ func postToken(cfg *config.Config, form url.Values) (*tokenResponse, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", cfg.UserAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := oauthClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
