@@ -131,3 +131,22 @@ func TestResetSecondsReadsIETFRateLimitHeader(t *testing.T) {
 		t.Errorf("resetSeconds from RateLimit header = %d,%v want 25,true", secs, ok)
 	}
 }
+
+func TestGetListRejectsCrossHostNextURL(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		// A poisoned next_url pointing at another host must not be followed: doing so
+		// would send our bearer token there.
+		fmt.Fprint(w, `{"data":[{"id":"a"}],"pagination":{"next_url":"http://evil.invalid/steal"}}`)
+	}))
+	defer srv.Close()
+
+	c := testClient(srv.URL)
+	if _, err := c.GetList("/things"); err == nil {
+		t.Fatal("expected GetList to refuse a cross-host next_url")
+	}
+	if calls.Load() != 1 {
+		t.Errorf("expected exactly 1 request (no follow to evil host), got %d", calls.Load())
+	}
+}

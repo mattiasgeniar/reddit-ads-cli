@@ -2,10 +2,16 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
+
+// maxListPages bounds how many pages GetList will follow, so a buggy or adversarial
+// next_url that loops cannot spin forever.
+const maxListPages = 10_000
 
 // listEnvelope is the shape of a paginated list response: a data array plus a
 // pagination block whose next_url, when present, is followed verbatim. The docs are
@@ -23,9 +29,12 @@ type listEnvelope struct {
 // base URL for the first page; subsequent pages use the absolute next_url as given.
 func (c *Client) GetList(path string) ([]json.RawMessage, error) {
 	var all []json.RawMessage
-	url := c.base + path
-	for url != "" {
-		resp, err := c.do(http.MethodGet, url, nil)
+	pageURL := c.base + path
+	for pages := 0; pageURL != ""; pages++ {
+		if pages >= maxListPages {
+			return nil, fmt.Errorf("pagination exceeded %d pages; aborting to avoid a loop", maxListPages)
+		}
+		resp, err := c.do(http.MethodGet, pageURL, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -40,9 +49,34 @@ func (c *Client) GetList(path string) ([]json.RawMessage, error) {
 			return nil, err
 		}
 		all = append(all, env.Data...)
-		url = env.Pagination.NextURL
+
+		if next := env.Pagination.NextURL; next != "" {
+			// The bearer token is attached to every request, so never follow next_url
+			// off to another host: that would hand our access token to it.
+			if err := c.sameHostAsBase(next); err != nil {
+				return nil, err
+			}
+		}
+		pageURL = env.Pagination.NextURL
 	}
 	return all, nil
+}
+
+// sameHostAsBase rejects a pagination URL whose scheme or host differs from the API
+// base, so a poisoned next_url cannot exfiltrate the bearer token to another origin.
+func (c *Client) sameHostAsBase(next string) error {
+	base, err := url.Parse(c.base)
+	if err != nil {
+		return err
+	}
+	n, err := url.Parse(next)
+	if err != nil {
+		return fmt.Errorf("invalid next_url %q: %w", next, err)
+	}
+	if n.Scheme != base.Scheme || n.Host != base.Host {
+		return fmt.Errorf("refusing to follow next_url to a different host: %q", next)
+	}
+	return nil
 }
 
 // GetListInto fetches every page and unmarshals the collected elements into out,
