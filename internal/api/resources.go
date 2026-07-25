@@ -42,11 +42,14 @@ func (c *Client) AdAccounts() ([]AdAccount, error) {
 	return all, nil
 }
 
-// Path helpers keep the typed list methods and their --json raw counterparts in sync
-// so the two can never drift apart.
+// Path helpers keep the typed methods and their --json raw counterparts in sync so the
+// two can never drift apart. The plural ones list; the singular ones address one object.
 func CampaignsPath(accountID string) string { return "/ad_accounts/" + accountID + "/campaigns" }
 func AdGroupsPath(accountID string) string  { return "/ad_accounts/" + accountID + "/ad_groups" }
 func AdsPath(accountID string) string       { return "/ad_accounts/" + accountID + "/ads" }
+func CampaignPath(id string) string         { return "/campaigns/" + id }
+func AdGroupPath(id string) string          { return "/ad_groups/" + id }
+func AdPath(id string) string               { return "/ads/" + id }
 
 // AdAccountsRaw returns the raw ad account elements across all businesses, for --json.
 func (c *Client) AdAccountsRaw() ([]json.RawMessage, error) {
@@ -75,7 +78,7 @@ func (c *Client) Campaigns(accountID string) ([]Campaign, error) {
 // Campaign fetches one campaign.
 func (c *Client) Campaign(id string) (*Campaign, error) {
 	var env dataEnvelope[Campaign]
-	if err := c.Get("/campaigns/"+id, &env); err != nil {
+	if err := c.Get(CampaignPath(id), &env); err != nil {
 		return nil, err
 	}
 	return &env.Data, nil
@@ -91,7 +94,7 @@ func (c *Client) AdGroups(accountID string) ([]AdGroup, error) {
 // AdGroup fetches one ad group, including its raw targeting object.
 func (c *Client) AdGroup(id string) (*AdGroup, error) {
 	var env dataEnvelope[AdGroup]
-	if err := c.Get("/ad_groups/"+id, &env); err != nil {
+	if err := c.Get(AdGroupPath(id), &env); err != nil {
 		return nil, err
 	}
 	return &env.Data, nil
@@ -107,7 +110,7 @@ func (c *Client) Ads(accountID string) ([]Ad, error) {
 // Ad fetches one ad.
 func (c *Client) Ad(id string) (*Ad, error) {
 	var env dataEnvelope[Ad]
-	if err := c.Get("/ads/"+id, &env); err != nil {
+	if err := c.Get(AdPath(id), &env); err != nil {
 		return nil, err
 	}
 	return &env.Data, nil
@@ -121,17 +124,17 @@ func (c *Client) patchData(path string, data any) error {
 
 // PatchCampaign applies a partial update to a campaign.
 func (c *Client) PatchCampaign(id string, data map[string]any) error {
-	return c.patchData("/campaigns/"+id, data)
+	return c.patchData(CampaignPath(id), data)
 }
 
 // PatchAdGroup applies a partial update to an ad group.
 func (c *Client) PatchAdGroup(id string, data map[string]any) error {
-	return c.patchData("/ad_groups/"+id, data)
+	return c.patchData(AdGroupPath(id), data)
 }
 
 // PatchAd applies a partial update to an ad.
 func (c *Client) PatchAd(id string, data map[string]any) error {
-	return c.patchData("/ads/"+id, data)
+	return c.patchData(AdPath(id), data)
 }
 
 func communitySearchPath(query string) string {

@@ -69,7 +69,7 @@ func (a *App) adsGetCmd() *cobra.Command {
 				return err
 			}
 			if a.jsonOut {
-				raw, err := client.GetRaw("/ads/" + args[0])
+				raw, err := client.GetRaw(api.AdPath(args[0]))
 				if err != nil {
 					return err
 				}

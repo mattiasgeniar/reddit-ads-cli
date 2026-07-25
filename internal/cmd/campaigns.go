@@ -68,7 +68,7 @@ func (a *App) campaignsGetCmd() *cobra.Command {
 				return err
 			}
 			if a.jsonOut {
-				raw, err := client.GetRaw("/campaigns/" + args[0])
+				raw, err := client.GetRaw(api.CampaignPath(args[0]))
 				if err != nil {
 					return err
 				}

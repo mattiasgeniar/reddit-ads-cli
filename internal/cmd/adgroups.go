@@ -72,7 +72,7 @@ func (a *App) adGroupsGetCmd() *cobra.Command {
 				return err
 			}
 			if a.jsonOut {
-				raw, err := client.GetRaw("/ad_groups/" + args[0])
+				raw, err := client.GetRaw(api.AdGroupPath(args[0]))
 				if err != nil {
 					return err
 				}
