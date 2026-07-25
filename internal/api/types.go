@@ -8,10 +8,12 @@ type dataEnvelope[T any] struct {
 }
 
 // Me is the subset of GET /me used by `auth status` to show who a token belongs to.
+// Reddit exposes the account handle as reddit_username, not username.
 type Me struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	ID             string `json:"id"`
+	RedditUsername string `json:"reddit_username"`
+	RedditUserID   string `json:"reddit_user_id"`
+	Email          string `json:"email"`
 }
 
 // Business is one entry from GET /me/businesses.

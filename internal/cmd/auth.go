@@ -115,8 +115,8 @@ func (a *App) authStatusCmd() *cobra.Command {
 			}
 
 			t := newTable("FIELD", "VALUE")
-			t.add("user", orDash(me.Username))
-			t.add("user_id", orDash(me.ID))
+			t.add("reddit_username", orDash(me.RedditUsername))
+			t.add("ads_user_id", orDash(me.ID))
 			t.add("config_dir", a.cfg.Dir())
 			if tok.AccessToken != "" {
 				t.add("access_token_expires", tok.ExpiresAt.Local().Format("2006-01-02 15:04:05"))
