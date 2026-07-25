@@ -109,8 +109,25 @@ func TestDryRunStillAllowsReads(t *testing.T) {
 }
 
 func TestParseStructuredReset(t *testing.T) {
-	n, ok := parseStructuredReset("limit=100, remaining=0, reset=42")
-	if !ok || n != 42 {
-		t.Errorf("parseStructuredReset = %d,%v want 42,true", n, ok)
+	// Legacy comma-separated reset= form.
+	if n, ok := parseStructuredReset("limit=100, remaining=0, reset=42"); !ok || n != 42 {
+		t.Errorf("parseStructuredReset(reset=) = %d,%v want 42,true", n, ok)
+	}
+	// IETF structured form carries the reset as t=, semicolon-delimited. This is what
+	// Reddit actually sends; the old parser missed it and ignored the backoff signal.
+	if n, ok := parseStructuredReset(`"default";r=0;t=30`); !ok || n != 30 {
+		t.Errorf("parseStructuredReset(;t=) = %d,%v want 30,true", n, ok)
+	}
+	// t is preferred over reset when both are present.
+	if n, ok := parseStructuredReset("reset=99, t=7"); !ok || n != 7 {
+		t.Errorf("parseStructuredReset prefers t: = %d,%v want 7,true", n, ok)
+	}
+}
+
+func TestResetSecondsReadsIETFRateLimitHeader(t *testing.T) {
+	h := http.Header{}
+	h.Set("RateLimit", `"campaign-read";r=0;t=25`)
+	if secs, ok := resetSeconds(h); !ok || secs != 25 {
+		t.Errorf("resetSeconds from RateLimit header = %d,%v want 25,true", secs, ok)
 	}
 }

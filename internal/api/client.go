@@ -200,20 +200,27 @@ func (c *Client) do(method, url string, raw []byte) (*http.Response, error) {
 	}
 }
 
+// maxBackoff caps how long a single 429 wait can be, so a bogus or huge reset value
+// from an edge/proxy cannot stall a command for minutes. Reddit's real windows are ~60s.
+const maxBackoff = 2 * time.Minute
+
 // backoff decides how long to wait after a 429. It prefers the reset seconds Reddit
 // reports (IETF RateLimit header or Retry-After) and only falls back to exponential
-// backoff when no header is present.
+// backoff when no header is present. The result is capped at maxBackoff.
 func (c *Client) backoff(resp *http.Response, attempt int) time.Duration {
-	if secs, ok := resetSeconds(resp.Header); ok {
-		return time.Duration(secs) * time.Second
+	wait := time.Duration(1<<attempt) * time.Second // 1s, 2s, 4s, 8s...
+	if secs, ok := resetSeconds(resp.Header); ok && secs > 0 {
+		wait = time.Duration(secs) * time.Second
 	}
-	// 1s, 2s, 4s, 8s...
-	return time.Duration(1<<attempt) * time.Second
+	if wait > maxBackoff {
+		return maxBackoff
+	}
+	return wait
 }
 
 // resetSeconds pulls the seconds-until-reset out of Reddit's rate-limit headers.
-// It accepts the IETF `RateLimit: ..., reset=N` structured header, a bare
-// `Retry-After: N`, and the legacy `x-ratelimit-reset` variants.
+// It accepts the IETF structured `RateLimit` header, a bare `Retry-After: N`, and the
+// legacy `x-ratelimit-reset` variants.
 func resetSeconds(h http.Header) (int, bool) {
 	if v := h.Get("Retry-After"); v != "" {
 		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
@@ -235,17 +242,28 @@ func resetSeconds(h http.Header) (int, bool) {
 	return 0, false
 }
 
-// parseStructuredReset extracts N from a header like "limit=100, remaining=0, reset=42".
+// parseStructuredReset extracts the seconds-until-reset from the IETF RateLimit header.
+// The reset is carried as `t=N`, in either the newer semicolon form
+// (`"default";r=0;t=30`) or a comma-separated form (`limit=100, remaining=0, t=30`).
+// The older draft spelled it `reset=N`, so accept that too, preferring `t`.
 func parseStructuredReset(v string) (int, bool) {
-	for _, part := range strings.Split(v, ",") {
+	var resetFallback int
+	haveFallback := false
+	fields := strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' })
+	for _, part := range fields {
 		part = strings.TrimSpace(part)
-		if after, ok := strings.CutPrefix(part, "reset="); ok {
+		if after, ok := strings.CutPrefix(part, "t="); ok {
 			if n, err := strconv.Atoi(strings.TrimSpace(after)); err == nil {
 				return n, true
 			}
 		}
+		if after, ok := strings.CutPrefix(part, "reset="); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(after)); err == nil {
+				resetFallback, haveFallback = n, true
+			}
+		}
 	}
-	return 0, false
+	return resetFallback, haveFallback
 }
 
 func (c *Client) printDryRun(method, path string, raw []byte) {
