@@ -18,12 +18,16 @@ type Config struct {
 	ClientID           string `json:"client_id,omitempty"`
 	ClientSecret       string `json:"client_secret,omitempty"`
 	RefreshToken       string `json:"refresh_token,omitempty"`
+	RedirectURI        string `json:"redirect_uri,omitempty"`
 	DefaultAdAccountID string `json:"default_ad_account_id,omitempty"`
 	DefaultProfileID   string `json:"default_profile_id,omitempty"`
 	UserAgent          string `json:"user_agent,omitempty"`
 	// BaseURL overrides the API root. Empty means the production default. Mainly for
 	// tests and staging; not something a normal user sets.
 	BaseURL string `json:"base_url,omitempty"`
+	// TokenURL overrides the OAuth token endpoint. Empty means the production default.
+	// Mainly for tests and proxies.
+	TokenURL string `json:"token_url,omitempty"`
 
 	// dir is the config directory these files were loaded from, so Save writes back
 	// to the same place. Not serialized.
@@ -67,8 +71,12 @@ func Load(dir string) (*Config, error) {
 	}
 
 	cfg := &Config{dir: dir}
-	data, err := os.ReadFile(filepath.Join(dir, configFileName))
+	configPath := filepath.Join(dir, configFileName)
+	data, err := os.ReadFile(configPath)
 	if err == nil {
+		// Self-heal: if the file was created or edited with loose permissions, tighten
+		// it before we trust it. This never loosens, only tightens.
+		hardenPerms(configPath)
 		if err := json.Unmarshal(data, cfg); err != nil {
 			return nil, fmt.Errorf("parsing %s: %w", configFileName, err)
 		}
@@ -89,10 +97,12 @@ func (c *Config) applyEnv() {
 	envOverride(&c.ClientID, "REDDIT_ADS_CLIENT_ID")
 	envOverride(&c.ClientSecret, "REDDIT_ADS_CLIENT_SECRET")
 	envOverride(&c.RefreshToken, "REDDIT_ADS_REFRESH_TOKEN")
+	envOverride(&c.RedirectURI, "REDDIT_ADS_REDIRECT_URI")
 	envOverride(&c.DefaultAdAccountID, "REDDIT_ADS_ACCOUNT_ID")
 	envOverride(&c.DefaultProfileID, "REDDIT_ADS_PROFILE_ID")
 	envOverride(&c.UserAgent, "REDDIT_ADS_USER_AGENT")
 	envOverride(&c.BaseURL, "REDDIT_ADS_BASE_URL")
+	envOverride(&c.TokenURL, "REDDIT_ADS_TOKEN_URL")
 }
 
 func envOverride(target *string, key string) {
@@ -130,13 +140,15 @@ func (c *Config) Save() error {
 // no error: the caller treats an empty or expired token as "must refresh".
 func (c *Config) LoadToken() (*Token, error) {
 	tok := &Token{}
-	data, err := os.ReadFile(filepath.Join(c.dir, tokenFileName))
+	tokenPath := filepath.Join(c.dir, tokenFileName)
+	data, err := os.ReadFile(tokenPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return tok, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	hardenPerms(tokenPath)
 	if err := json.Unmarshal(data, tok); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", tokenFileName, err)
 	}
@@ -161,6 +173,20 @@ func (t *Token) Valid(skew time.Duration) bool {
 		return false
 	}
 	return time.Now().Add(skew).Before(t.ExpiresAt)
+}
+
+// hardenPerms tightens a sensitive file to 0600 when it is group- or world-accessible,
+// so a config that was created or hand-edited with loose permissions cannot leak the
+// client secret or refresh token. It only ever tightens, never loosens, and is quiet
+// about it (a missing file or a chmod failure is not worth interrupting the command).
+func hardenPerms(path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		_ = os.Chmod(path, 0o600)
+	}
 }
 
 // writeFile600 writes atomically-ish with 600 perms. os.WriteFile respects the mode

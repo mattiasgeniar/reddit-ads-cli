@@ -151,6 +151,57 @@ func TestReportTableConvertsSpendToDollars(t *testing.T) {
 	}
 }
 
+func TestAuthLoginWizardPromptsExchangesAndPersists(t *testing.T) {
+	// Fake token endpoint returns a refresh token for any code.
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Form.Get("code") != "the-code" {
+			t.Errorf("exchange sent code %q, want the-code", r.Form.Get("code"))
+		}
+		_, _ = io.WriteString(w, `{"access_token":"AT","refresh_token":"RT","expires_in":3600}`)
+	}))
+	defer tokenSrv.Close()
+
+	dir := t.TempDir()
+	t.Setenv("REDDIT_ADS_TOKEN_URL", tokenSrv.URL)
+
+	// Wizard prompts in order: client id, secret, redirect (blank = default),
+	// then the pasted redirect URL that carries the code.
+	stdin := "cid\nsecret\n\nhttps://cb/callback?code=the-code#_\n"
+	var out bytes.Buffer
+	app := &App{out: &out, in: strings.NewReader(stdin)}
+	root := app.rootCmd()
+	root.SetArgs([]string{"--config", dir, "auth", "login"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("wizard failed: %v\noutput:\n%s", err, out.String())
+	}
+
+	// The credentials and refresh token must be persisted so login is a one-time thing.
+	saved := readJSON(t, filepath.Join(dir, "config.json"))
+	if saved["client_id"] != "cid" || saved["client_secret"] != "secret" {
+		t.Errorf("credentials not persisted: %v", saved)
+	}
+	if saved["refresh_token"] != "RT" {
+		t.Errorf("refresh token not persisted: %v", saved)
+	}
+	if saved["redirect_uri"] != defaultRedirectURI {
+		t.Errorf("redirect uri = %v, want the default that was accepted with an empty line", saved["redirect_uri"])
+	}
+}
+
+func readJSON(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
 func TestWriteAbortsWhenUserDeclinesConfirmation(t *testing.T) {
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -13,15 +13,22 @@ import (
 )
 
 // Reddit's OAuth endpoints live on www.reddit.com, not on the ads-api host.
-const authorizeURL = "https://www.reddit.com/api/v1/authorize"
+const (
+	authorizeURL   = "https://www.reddit.com/api/v1/authorize"
+	accessTokenURL = "https://www.reddit.com/api/v1/access_token"
 
-// accessTokenURL is a var, not a const, only so tests can point the token exchange at
-// an httptest server. Production never changes it.
-var accessTokenURL = "https://www.reddit.com/api/v1/access_token"
+	// V1Scopes are the scopes v1 needs. These are Reddit's real ads scopes, NOT the
+	// ads:read / ads:manage that third-party blog posts repeat.
+	V1Scopes = "adsread,adsedit"
+)
 
-// V1Scopes are the scopes v1 needs. These are Reddit's real ads scopes, NOT the
-// ads:read / ads:manage that third-party blog posts repeat.
-const V1Scopes = "adsread,adsedit"
+// tokenEndpoint is the OAuth token URL, honoring a config override (proxy/test).
+func tokenEndpoint(cfg *config.Config) string {
+	if cfg.TokenURL != "" {
+		return cfg.TokenURL
+	}
+	return accessTokenURL
+}
 
 // AuthorizeURL builds the URL the user opens once to grant access. duration=permanent
 // makes Reddit return a refresh token. state is echoed back in the redirect so the
@@ -94,7 +101,7 @@ func postToken(cfg *config.Config, form url.Values) (*tokenResponse, error) {
 		return nil, fmt.Errorf("client_id and client_secret are required for the token exchange")
 	}
 
-	req, err := http.NewRequest(http.MethodPost, accessTokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequest(http.MethodPost, tokenEndpoint(cfg), strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}

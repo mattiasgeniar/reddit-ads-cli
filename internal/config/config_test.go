@@ -40,6 +40,41 @@ func TestSaveTokenEnforces600AndDoesNotWriteConfig(t *testing.T) {
 	}
 }
 
+func TestLoadHardensLoosePermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, configFileName)
+	// Simulate a config that was created or hand-edited world-readable.
+	if err := os.WriteFile(path, []byte(`{"client_id":"x","client_secret":"secret"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("Load did not tighten loose config perms: got %o, want 600", perm)
+	}
+}
+
+func TestLoadTokenHardensLoosePermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, tokenFileName)
+	if err := os.WriteFile(path, []byte(`{"access_token":"AT"}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{dir: dir}
+	if _, err := cfg.LoadToken(); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(path)
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("LoadToken did not tighten loose token perms: got %o, want 600", perm)
+	}
+}
+
 func TestEnvOverridesFile(t *testing.T) {
 	dir := t.TempDir()
 	seed := &Config{ClientID: "from-file", RefreshToken: "file-refresh", dir: dir}

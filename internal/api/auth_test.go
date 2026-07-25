@@ -48,11 +48,7 @@ func TestExchangeCodeUsesBasicAuthAndReturnsRefreshToken(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := accessTokenURL
-	accessTokenURL = srv.URL
-	defer func() { accessTokenURL = old }()
-
-	cfg := &config.Config{ClientID: "id", ClientSecret: "secret", UserAgent: "test"}
+	cfg := &config.Config{ClientID: "id", ClientSecret: "secret", UserAgent: "test", TokenURL: srv.URL}
 	refresh, token, err := ExchangeCode(cfg, "the-code", "https://cb.example/redirect")
 	if err != nil {
 		t.Fatal(err)
@@ -74,11 +70,8 @@ func TestExchangeCodeRejectsMissingRefreshToken(t *testing.T) {
 		_, _ = w.Write([]byte(`{"access_token":"AT","expires_in":3600}`))
 	}))
 	defer srv.Close()
-	old := accessTokenURL
-	accessTokenURL = srv.URL
-	defer func() { accessTokenURL = old }()
 
-	cfg := &config.Config{ClientID: "id", ClientSecret: "secret", UserAgent: "test"}
+	cfg := &config.Config{ClientID: "id", ClientSecret: "secret", UserAgent: "test", TokenURL: srv.URL}
 	if _, _, err := ExchangeCode(cfg, "code", "cb"); err == nil {
 		t.Error("expected error when duration=permanent is missing and no refresh token returned")
 	}
@@ -93,11 +86,8 @@ func TestRefreshAccessTokenSendsRefreshGrant(t *testing.T) {
 		_, _ = w.Write([]byte(`{"access_token":"AT2","expires_in":3600}`))
 	}))
 	defer srv.Close()
-	old := accessTokenURL
-	accessTokenURL = srv.URL
-	defer func() { accessTokenURL = old }()
 
-	cfg := &config.Config{ClientID: "id", ClientSecret: "secret", RefreshToken: "RT", UserAgent: "test"}
+	cfg := &config.Config{ClientID: "id", ClientSecret: "secret", RefreshToken: "RT", UserAgent: "test", TokenURL: srv.URL}
 	token, err := RefreshAccessToken(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -120,11 +110,8 @@ func TestPostTokenSurfacesHTTPError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
 	}))
 	defer srv.Close()
-	old := accessTokenURL
-	accessTokenURL = srv.URL
-	defer func() { accessTokenURL = old }()
 
-	cfg := &config.Config{ClientID: "id", ClientSecret: "secret", RefreshToken: "RT", UserAgent: "test"}
+	cfg := &config.Config{ClientID: "id", ClientSecret: "secret", RefreshToken: "RT", UserAgent: "test", TokenURL: srv.URL}
 	if _, err := RefreshAccessToken(cfg); err == nil {
 		t.Error("expected error on 401 from token endpoint")
 	}

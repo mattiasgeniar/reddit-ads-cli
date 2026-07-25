@@ -1,13 +1,18 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/mattiasgeniar/reddit-ads-cli/internal/api"
 	"github.com/spf13/cobra"
 )
+
+// defaultRedirectURI is offered as the default during `auth login`. Register this exact
+// value on your developer app and you never have to think about it again. It never has
+// to serve anything: the code is copied out of the address bar by hand.
+const defaultRedirectURI = "http://localhost:8080/reddit-ads/callback"
 
 func (a *App) authCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -22,45 +27,70 @@ func (a *App) authLoginCmd() *cobra.Command {
 	var clientID, clientSecret, redirectURI, state, scopes string
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Run the one-time OAuth flow and store the refresh token",
-		Long: "Prints the Reddit authorize URL. Open it, click Allow, then copy the `code` " +
-			"query parameter out of the redirect URL and paste it here. The code is valid " +
-			"for ten minutes and is single-use.",
+		Short: "Authorize the CLI (one-time, interactive)",
+		Long: "Walks you through the one-time OAuth flow. Run it bare and it asks for anything " +
+			"it needs, or pass --client-id/--client-secret/--redirect-uri for a non-interactive " +
+			"run (CI). It stores your credentials and a permanent refresh token, so you only do " +
+			"this once. When it prints the authorize URL, open it, click Allow, and paste back " +
+			"either the code or the whole redirect URL from your address bar.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Flags override config so first-time setup can supply credentials inline.
+			p := a.prompter()
+
+			// Flags win over config; whatever is still missing gets prompted for.
 			if clientID != "" {
 				a.cfg.ClientID = clientID
 			}
+			if a.cfg.ClientID == "" {
+				v, err := p.ask("Client ID", "")
+				if err != nil {
+					return err
+				}
+				a.cfg.ClientID = v
+			}
+			if a.cfg.ClientID == "" {
+				return fmt.Errorf("client id is required")
+			}
+
 			if clientSecret != "" {
 				a.cfg.ClientSecret = clientSecret
 			}
-			if a.cfg.ClientID == "" || a.cfg.ClientSecret == "" {
-				return fmt.Errorf("client id and secret required: pass --client-id/--client-secret or set them in config")
+			if a.cfg.ClientSecret == "" {
+				v, err := p.askSecret("Client secret")
+				if err != nil {
+					return err
+				}
+				a.cfg.ClientSecret = v
 			}
-			if redirectURI == "" {
-				return fmt.Errorf("--redirect-uri is required and must match the value registered on the developer app")
+			if a.cfg.ClientSecret == "" {
+				return fmt.Errorf("client secret is required")
 			}
 
-			url := api.AuthorizeURL(a.cfg.ClientID, redirectURI, state, scopes)
-			fmt.Fprintln(a.out, "1. Open this URL, sign in as a business admin, and click Allow:")
-			fmt.Fprintln(a.out)
-			fmt.Fprintln(a.out, url)
-			fmt.Fprintln(a.out)
-			fmt.Fprintln(a.out, "2. You will be redirected to your redirect URI with ?code=... in the address bar.")
-			fmt.Fprint(a.out, "3. Paste the code value here (strip any trailing #_): ")
+			if redirectURI != "" {
+				a.cfg.RedirectURI = redirectURI
+			}
+			if a.cfg.RedirectURI == "" {
+				v, err := p.ask("Redirect URI (must match your developer app)", defaultRedirectURI)
+				if err != nil {
+					return err
+				}
+				a.cfg.RedirectURI = v
+			}
 
-			reader := bufio.NewReader(a.in)
-			line, err := reader.ReadString('\n')
+			authURL := api.AuthorizeURL(a.cfg.ClientID, a.cfg.RedirectURI, state, scopes)
+			fmt.Fprintln(a.out, "\nOpen this URL, sign in as a business admin, and click Allow:")
+			fmt.Fprintln(a.out, "\n  "+authURL)
+			fmt.Fprintln(a.out, "\nYou land on your redirect URI with ?code=... in the address bar.")
+
+			pasted, err := p.ask("\nPaste the code or the full redirect URL", "")
 			if err != nil {
-				return fmt.Errorf("reading code: %w", err)
+				return err
 			}
-			code := strings.TrimSpace(line)
-			code = strings.TrimSuffix(code, "#_")
+			code := extractAuthCode(pasted)
 			if code == "" {
-				return fmt.Errorf("no code entered")
+				return fmt.Errorf("no code found in what you pasted")
 			}
 
-			refresh, token, err := api.ExchangeCode(a.cfg, code, redirectURI)
+			refresh, token, err := api.ExchangeCode(a.cfg, code, a.cfg.RedirectURI)
 			if err != nil {
 				return err
 			}
@@ -72,16 +102,36 @@ func (a *App) authLoginCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(a.out, "\nAuthorized. Refresh token and credentials saved to %s\n", a.cfg.Dir())
+			fmt.Fprintf(a.out, "\nDone. Credentials and refresh token saved to %s (mode 600).\n", a.cfg.Dir())
+			fmt.Fprintln(a.out, "Try `reddit-ads auth status` or `reddit-ads accounts list`.")
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&clientID, "client-id", "", "developer app client id (persisted to config)")
-	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "developer app client secret (persisted to config)")
-	cmd.Flags().StringVar(&redirectURI, "redirect-uri", "", "redirect URI registered on the developer app (required)")
+	cmd.Flags().StringVar(&clientID, "client-id", "", "developer app client id (prompted if unset; persisted)")
+	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "developer app client secret (prompted if unset; persisted)")
+	cmd.Flags().StringVar(&redirectURI, "redirect-uri", "", "redirect URI registered on the developer app (prompted if unset; persisted)")
 	cmd.Flags().StringVar(&state, "state", "reddit-ads-cli", "opaque state value echoed back in the redirect")
 	cmd.Flags().StringVar(&scopes, "scopes", api.V1Scopes, "comma-separated OAuth scopes")
 	return cmd
+}
+
+// extractAuthCode pulls the OAuth code out of whatever the user pasted: a bare code, or
+// the full redirect URL. Reddit appends a trailing #_ that has to come off either way.
+func extractAuthCode(pasted string) string {
+	pasted = strings.TrimSpace(pasted)
+	pasted = strings.TrimSuffix(pasted, "#_")
+	if !strings.Contains(pasted, "code=") {
+		return pasted
+	}
+	if u, err := url.Parse(pasted); err == nil {
+		if code := u.Query().Get("code"); code != "" {
+			return strings.TrimSuffix(code, "#_")
+		}
+	}
+	// Fall back to a manual scrape if it was not a parseable URL.
+	rest := pasted[strings.Index(pasted, "code=")+len("code="):]
+	rest, _, _ = strings.Cut(rest, "&")
+	return strings.TrimSuffix(rest, "#_")
 }
 
 func (a *App) authStatusCmd() *cobra.Command {
