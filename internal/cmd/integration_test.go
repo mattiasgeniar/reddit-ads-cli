@@ -3,13 +3,16 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // capturedRequest records what a fake API server received, so a test can assert on
@@ -186,6 +189,68 @@ func TestAuthLoginWizardPromptsExchangesAndPersists(t *testing.T) {
 	}
 	if saved["redirect_uri"] != defaultRedirectURI {
 		t.Errorf("redirect uri = %v, want the default that was accepted with an empty line", saved["redirect_uri"])
+	}
+}
+
+func TestAuthLoginCapturesCodeViaLoopback(t *testing.T) {
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Form.Get("code") != "the-code" {
+			t.Errorf("exchange sent code %q, want the-code", r.Form.Get("code"))
+		}
+		_, _ = io.WriteString(w, `{"access_token":"AT","refresh_token":"RT","expires_in":3600}`)
+	}))
+	defer tokenSrv.Close()
+
+	// Reserve a free port, then hand it to the CLI as the redirect so the loopback
+	// server binds it. Small TOCTOU window, fine for a test.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	freePort := probe.Addr().(*net.TCPAddr).Port
+	probe.Close()
+	redirect := fmt.Sprintf("http://127.0.0.1:%d/reddit-ads/callback", freePort)
+
+	dir := t.TempDir()
+	t.Setenv("REDDIT_ADS_TOKEN_URL", tokenSrv.URL)
+
+	var out bytes.Buffer
+	// Empty stdin: no paste, so the browser redirect is what completes the login.
+	app := &App{out: &out, in: strings.NewReader("")}
+	root := app.rootCmd()
+	root.SetArgs([]string{"--config", dir, "auth", "login",
+		"--app-id", "APPID", "--app-secret", "SECRET", "--redirect-uri", redirect})
+
+	done := make(chan error, 1)
+	go func() { done <- root.Execute() }()
+
+	// Simulate the browser landing on the redirect, retrying until the server is up.
+	callback := fmt.Sprintf("%s?code=the-code&state=reddit-ads-cli", redirect)
+	var page string
+	for i := 0; i < 200; i++ {
+		resp, err := http.Get(callback)
+		if err == nil {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			page = string(b)
+			break
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+
+	if err := <-done; err != nil {
+		t.Fatalf("login failed: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(strings.ToLower(page), "successful") {
+		t.Errorf("callback page did not confirm success: %s", page)
+	}
+	if !strings.Contains(out.String(), "Authentication successful") {
+		t.Errorf("terminal did not report success:\n%s", out.String())
+	}
+	saved := readJSON(t, filepath.Join(dir, "config.json"))
+	if saved["refresh_token"] != "RT" {
+		t.Errorf("refresh token not persisted after loopback capture: %v", saved)
 	}
 }
 

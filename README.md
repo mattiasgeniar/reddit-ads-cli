@@ -61,10 +61,23 @@ reddit-ads auth login
 ```
 
 It asks for the App ID, the Secret (hidden while you type), and the redirect URI (hit
-enter to accept the default above), then prints an authorize URL. Open it, click
-Allow, and you land on your redirect URI with `?code=...` in the address bar. Paste the
-whole URL back, or just the code if you'd rather. That's it, the CLI exchanges it for a
-permanent refresh token and stores everything, so you only do this once.
+enter to accept the default above), then prints an authorize URL. Open it and click
+Allow.
+
+If the CLI is running on the same machine as your browser, it catches the redirect on a
+local server, shows an "Authentication successful" page in the tab, and you're done. No
+copy-paste. If the browser is on another machine (you're SSH'd into a box, say), the
+redirect can't reach the CLI, so paste the code or the whole redirect URL back into the
+terminal instead. The CLI waits for either, whichever comes first.
+
+Two flags for the loopback capture:
+
+- `--port N` if you registered a redirect on a port other than 8080, or 8080 is taken.
+  The port has to match a redirect registered on your app, Reddit checks it exactly.
+- `--manual` to skip the local server entirely and just paste (handy on headless boxes).
+
+Either way the CLI exchanges the code for a permanent refresh token and stores
+everything, so you only do this once.
 
 Prefer flags for CI? They still work, and skip every prompt:
 
