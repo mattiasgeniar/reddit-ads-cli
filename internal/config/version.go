@@ -1,9 +1,9 @@
 package config
 
 // Version is the CLI version, stamped into the User-Agent and shown by `--version`.
-// It is a var so a release build can inject the git tag via
-// -ldflags "-X .../internal/config.Version=v1.2.3".
-var Version = "0.1.0"
+// Source builds report "dev"; release builds inject the git tag via
+// -ldflags "-X .../internal/config.Version=v1.2.3" (see .goreleaser.yaml).
+var Version = "dev"
 
 // DefaultUserAgent is Reddit's required descriptive form:
 // <platform>:<app id>:<version> (by /u/<username>). Reddit bans clients that spoof
