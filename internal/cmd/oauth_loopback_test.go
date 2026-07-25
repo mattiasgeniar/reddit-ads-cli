@@ -56,6 +56,28 @@ func TestLoopbackReportsProviderError(t *testing.T) {
 	}
 }
 
+func TestStartLoopbackRefusesNonLoopbackHost(t *testing.T) {
+	// Binding a network-facing capture server would expose the callback to the LAN.
+	for _, redirect := range []string{"http://0.0.0.0:0/cb", "http://example.com:0/cb", "http:///cb"} {
+		if _, err := startLoopback(redirect, "s"); err == nil {
+			t.Errorf("startLoopback(%q) should refuse a non-loopback host", redirect)
+		}
+	}
+}
+
+func TestIsLoopbackHost(t *testing.T) {
+	for _, h := range []string{"localhost", "127.0.0.1", "127.0.0.5", "::1"} {
+		if !isLoopbackHost(h) {
+			t.Errorf("isLoopbackHost(%q) = false, want true", h)
+		}
+	}
+	for _, h := range []string{"", "0.0.0.0", "example.com", "10.0.0.1"} {
+		if isLoopbackHost(h) {
+			t.Errorf("isLoopbackHost(%q) = true, want false", h)
+		}
+	}
+}
+
 func TestWithPort(t *testing.T) {
 	got, err := withPort("http://localhost:8080/reddit-ads/callback", 9123)
 	if err != nil {

@@ -27,11 +27,16 @@ type loopbackServer struct {
 }
 
 // startLoopback binds a server on the redirect URI's host and port and serves its path.
-// A bind failure (the port is taken) is returned so the caller can fall back to paste.
+// A bind failure (port taken) or a non-loopback host is returned so the caller can fall
+// back to paste. It refuses any non-loopback host so the capture endpoint is never
+// exposed to the LAN (e.g. a redirect of http://0.0.0.0:8080 or an empty host).
 func startLoopback(redirectURI, expectedState string) (*loopbackServer, error) {
 	u, err := url.Parse(redirectURI)
 	if err != nil {
 		return nil, err
+	}
+	if !isLoopbackHost(u.Hostname()) {
+		return nil, fmt.Errorf("redirect host %q is not loopback; refusing to bind a network-facing capture server", u.Hostname())
 	}
 	port := u.Port()
 	if port == "" {
@@ -54,34 +59,54 @@ func startLoopback(redirectURI, expectedState string) (*loopbackServer, error) {
 // tests can drive it on an ephemeral port without racing on a fixed one.
 func serveLoopback(ln net.Listener, path, expectedState string) (*http.Server, <-chan loopbackResult) {
 	ch := make(chan loopbackResult, 1)
+	// The result is consumed exactly once, so a second concurrent callback (a double
+	// submit) must not block its handler goroutine forever: send without blocking.
+	send := func(r loopbackResult) {
+		select {
+		case ch <- r:
+		default:
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 
 		if e := q.Get("error"); e != "" {
 			writeCallbackPage(w, false, "Reddit returned an error: "+e)
-			ch <- loopbackResult{err: fmt.Errorf("authorization failed: %s", e)}
+			send(loopbackResult{err: fmt.Errorf("authorization failed: %s", e)})
 			return
 		}
 		// state guards against a cross-site request forging the callback.
 		if expectedState != "" && q.Get("state") != expectedState {
 			writeCallbackPage(w, false, "State did not match. Ignoring this redirect.")
-			ch <- loopbackResult{err: fmt.Errorf("state mismatch on the OAuth redirect")}
+			send(loopbackResult{err: fmt.Errorf("state mismatch on the OAuth redirect")})
 			return
 		}
 		code := q.Get("code")
 		if code == "" {
 			writeCallbackPage(w, false, "No code was present in the redirect.")
-			ch <- loopbackResult{err: fmt.Errorf("no code in the redirect")}
+			send(loopbackResult{err: fmt.Errorf("no code in the redirect")})
 			return
 		}
 		writeCallbackPage(w, true, "")
-		ch <- loopbackResult{code: code}
+		send(loopbackResult{code: code})
 	})
 
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	return srv, ch
+}
+
+// isLoopbackHost reports whether host is a loopback address (127.0.0.0/8, ::1, or the
+// name "localhost"). An empty or non-loopback host returns false.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // shutdown drains the server so the browser finishes rendering the success page before
