@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/mattiasgeniar/reddit-ads-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/mattiasgeniar/reddit-ads-cli/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/mattiasgeniar/reddit-ads-cli?sort=semver)](https://github.com/mattiasgeniar/reddit-ads-cli/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/mattiasgeniar/reddit-ads-cli)](https://goreportcard.com/report/github.com/mattiasgeniar/reddit-ads-cli)
 [![Go version](https://img.shields.io/github/go-mod/go-version/mattiasgeniar/reddit-ads-cli)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/mattiasgeniar/reddit-ads-cli)](LICENSE)
 
