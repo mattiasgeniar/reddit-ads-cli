@@ -15,10 +15,11 @@ import (
 // Config holds the static credentials and defaults. It lives in config.json (mode
 // 600) and is never rewritten by a token refresh.
 type Config struct {
-	// ClientID and ClientSecret are the OAuth credentials. Reddit's UI labels them
-	// "App ID" and "Secret" under Developer Applications; the App ID is the client id.
-	ClientID           string `json:"client_id,omitempty"`
-	ClientSecret       string `json:"client_secret,omitempty"`
+	// AppID and AppSecret are the OAuth credentials, named the way Reddit's UI does:
+	// "App ID" and "Secret" under Developer Applications. Reddit's OAuth protocol calls
+	// the App ID the client_id, but that name stays down in the API layer.
+	AppID              string `json:"app_id,omitempty"`
+	AppSecret          string `json:"app_secret,omitempty"`
 	RefreshToken       string `json:"refresh_token,omitempty"`
 	RedirectURI        string `json:"redirect_uri,omitempty"`
 	DefaultAdAccountID string `json:"default_ad_account_id,omitempty"`
@@ -96,8 +97,8 @@ func Load(dir string) (*Config, error) {
 }
 
 func (c *Config) applyEnv() {
-	envOverride(&c.ClientID, "REDDIT_ADS_CLIENT_ID")
-	envOverride(&c.ClientSecret, "REDDIT_ADS_CLIENT_SECRET")
+	envOverride(&c.AppID, "REDDIT_ADS_APP_ID")
+	envOverride(&c.AppSecret, "REDDIT_ADS_APP_SECRET")
 	envOverride(&c.RefreshToken, "REDDIT_ADS_REFRESH_TOKEN")
 	envOverride(&c.RedirectURI, "REDDIT_ADS_REDIRECT_URI")
 	envOverride(&c.DefaultAdAccountID, "REDDIT_ADS_ACCOUNT_ID")
@@ -179,7 +180,7 @@ func (t *Token) Valid(skew time.Duration) bool {
 
 // hardenPerms tightens a sensitive file to 0600 when it is group- or world-accessible,
 // so a config that was created or hand-edited with loose permissions cannot leak the
-// client secret or refresh token. It only ever tightens, never loosens, and is quiet
+// app secret or refresh token. It only ever tightens, never loosens, and is quiet
 // about it (a missing file or a chmod failure is not worth interrupting the command).
 func hardenPerms(path string) {
 	info, err := os.Stat(path)

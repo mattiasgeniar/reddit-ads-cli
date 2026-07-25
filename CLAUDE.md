@@ -37,9 +37,16 @@ Reddit's OAuth code flow, which needs a browser exactly once:
 1. `reddit-ads auth login` prints `https://www.reddit.com/api/v1/authorize?...` with
    `duration=permanent` and the scopes below. Open it, click Allow, copy the `code`
    query parameter out of the redirect URL (strip a trailing `#_` if present, it is
-   valid for ten minutes and single-use).
+   valid for ten minutes and single-use). By default the CLI captures this redirect on
+   a local loopback server, so no copy-paste when the browser is on the same machine.
 2. The CLI exchanges it at `https://www.reddit.com/api/v1/access_token` (HTTP Basic with
-   client id and secret) and stores the refresh token.
+   the App ID and Secret) and stores the refresh token.
+
+Naming: Reddit's Developer Applications UI labels the two credentials **App ID** and
+**Secret**, so the CLI does too, in prompts, flags (`--app-id`/`--app-secret`), config
+keys (`app_id`/`app_secret`), and env (`REDDIT_ADS_APP_ID`/`REDDIT_ADS_APP_SECRET`). The
+App ID is the OAuth `client_id` on the wire; that name only appears in the API layer
+(the authorize URL query param and HTTP Basic), never in the user-facing surface.
 
 Scopes are Reddit-specific and are NOT the `ads:read` / `ads:manage` you will find in
 third-party blog posts. The real ones: `adsread`, `adsedit`, `adsconversions`,
@@ -56,10 +63,10 @@ Static credentials and the volatile token live in separate files so a token refr
 never rewrite the credentials.
 
 - `~/.config/reddit-ads/config.json`, mode 600, never in git:
-  `client_id`, `client_secret`, `refresh_token`, `default_ad_account_id`,
+  `app_id`, `app_secret`, `refresh_token`, `redirect_uri`, `default_ad_account_id`,
   `default_profile_id`, optional `user_agent`.
 - `~/.config/reddit-ads/token.json`, mode 600: cached `access_token` and its expiry.
-- Env vars (`REDDIT_ADS_CLIENT_ID`, `REDDIT_ADS_CLIENT_SECRET`,
+- Env vars (`REDDIT_ADS_APP_ID`, `REDDIT_ADS_APP_SECRET`,
   `REDDIT_ADS_REFRESH_TOKEN`, ...) override the file, so cron and CI do not need a home
   directory.
 

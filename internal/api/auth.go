@@ -32,10 +32,10 @@ func tokenEndpoint(cfg *config.Config) string {
 
 // AuthorizeURL builds the URL the user opens once to grant access. duration=permanent
 // makes Reddit return a refresh token. state is echoed back in the redirect so the
-// user can sanity-check it.
-func AuthorizeURL(clientID, redirectURI, state, scopes string) string {
+// user can sanity-check it. appID is Reddit's App ID, which OAuth carries as client_id.
+func AuthorizeURL(appID, redirectURI, state, scopes string) string {
 	q := url.Values{}
-	q.Set("client_id", clientID)
+	q.Set("client_id", appID)
 	q.Set("response_type", "code")
 	q.Set("state", state)
 	q.Set("redirect_uri", redirectURI)
@@ -97,15 +97,15 @@ func tokenFrom(tr *tokenResponse) *config.Token {
 }
 
 func postToken(cfg *config.Config, form url.Values) (*tokenResponse, error) {
-	if cfg.ClientID == "" || cfg.ClientSecret == "" {
-		return nil, fmt.Errorf("client_id and client_secret are required for the token exchange")
+	if cfg.AppID == "" || cfg.AppSecret == "" {
+		return nil, fmt.Errorf("app id and secret are required for the token exchange")
 	}
 
 	req, err := http.NewRequest(http.MethodPost, tokenEndpoint(cfg), strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
-	req.SetBasicAuth(cfg.ClientID, cfg.ClientSecret)
+	req.SetBasicAuth(cfg.AppID, cfg.AppSecret)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", cfg.UserAgent)
 

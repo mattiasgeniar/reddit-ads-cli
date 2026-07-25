@@ -26,7 +26,7 @@ func (a *App) authCmd() *cobra.Command {
 }
 
 func (a *App) authLoginCmd() *cobra.Command {
-	var appID, appSecret, clientID, clientSecret, redirectURI, state, scopes string
+	var appID, appSecret, redirectURI, state, scopes string
 	var port int
 	var manual bool
 	cmd := &cobra.Command{
@@ -41,34 +41,32 @@ func (a *App) authLoginCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := a.prompter()
 
-			// --app-id is the real name (matches Reddit's UI); --client-id is kept as an
-			// alias because the App ID is the OAuth client id. Flags win over config;
-			// whatever is still missing gets prompted for.
-			if v := firstNonEmpty(appID, clientID); v != "" {
-				a.cfg.ClientID = v
+			// Flags win over config; whatever is still missing gets prompted for.
+			if appID != "" {
+				a.cfg.AppID = appID
 			}
-			if a.cfg.ClientID == "" {
+			if a.cfg.AppID == "" {
 				v, err := p.ask("App ID", "")
 				if err != nil {
 					return err
 				}
-				a.cfg.ClientID = v
+				a.cfg.AppID = v
 			}
-			if a.cfg.ClientID == "" {
+			if a.cfg.AppID == "" {
 				return fmt.Errorf("app id is required")
 			}
 
-			if v := firstNonEmpty(appSecret, clientSecret); v != "" {
-				a.cfg.ClientSecret = v
+			if appSecret != "" {
+				a.cfg.AppSecret = appSecret
 			}
-			if a.cfg.ClientSecret == "" {
+			if a.cfg.AppSecret == "" {
 				v, err := p.askSecret("App secret")
 				if err != nil {
 					return err
 				}
-				a.cfg.ClientSecret = v
+				a.cfg.AppSecret = v
 			}
-			if a.cfg.ClientSecret == "" {
+			if a.cfg.AppSecret == "" {
 				return fmt.Errorf("app secret is required")
 			}
 
@@ -92,7 +90,7 @@ func (a *App) authLoginCmd() *cobra.Command {
 				a.cfg.RedirectURI = rewritten
 			}
 
-			authURL := api.AuthorizeURL(a.cfg.ClientID, a.cfg.RedirectURI, state, scopes)
+			authURL := api.AuthorizeURL(a.cfg.AppID, a.cfg.RedirectURI, state, scopes)
 			code, err := a.obtainAuthCode(p, authURL, a.cfg.RedirectURI, state, manual)
 			if err != nil {
 				return err
@@ -120,10 +118,6 @@ func (a *App) authLoginCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&appID, "app-id", "", "the App ID from Reddit's Developer Applications (prompted if unset; persisted)")
 	cmd.Flags().StringVar(&appSecret, "app-secret", "", "the Secret from Reddit's Developer Applications (prompted if unset; persisted)")
-	// Aliases: the App ID/Secret are the OAuth client id/secret. Kept for anyone who
-	// scripted against the earlier flag names.
-	cmd.Flags().StringVar(&clientID, "client-id", "", "alias for --app-id")
-	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "alias for --app-secret")
 	cmd.Flags().StringVar(&redirectURI, "redirect-uri", "", "redirect URI registered on the developer app (prompted if unset; persisted)")
 	cmd.Flags().IntVar(&port, "port", 0, "override the redirect URI port for local capture (must match a registered redirect)")
 	cmd.Flags().BoolVar(&manual, "manual", false, "skip local capture and paste the code by hand (for remote/headless boxes)")
@@ -195,16 +189,6 @@ func withPort(rawURL string, port int) (string, error) {
 	}
 	u.Host = net.JoinHostPort(u.Hostname(), strconv.Itoa(port))
 	return u.String(), nil
-}
-
-// firstNonEmpty returns the first non-empty string, or "".
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // extractAuthCode pulls the OAuth code out of whatever the user pasted: a bare code, or

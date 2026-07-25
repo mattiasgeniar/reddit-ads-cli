@@ -43,9 +43,10 @@ Requires Go 1.26+ to build from source.
 
 You need a developer app first. A business admin with a verified account creates it in
 Ads Manager under Business > Developer Portal, which gives you two values Reddit labels
-**App ID** and **Secret** (the App ID is your OAuth client id, the Secret is the client
-secret; the API and this config use those OAuth names under the hood). For the redirect
-URI, register this exact value and you're done thinking about it:
+**App ID** and **Secret**. Those are the names this CLI uses too, in the prompts, the
+flags (`--app-id`/`--app-secret`), and the config (`app_id`/`app_secret`). (Reddit's
+OAuth calls the App ID the `client_id` on the wire, but you never have to.) For the
+redirect URI, register this exact value and you're done thinking about it:
 
 ```
 http://localhost:8080/reddit-ads/callback
@@ -99,9 +100,9 @@ The v1 scopes are `adsread,adsedit`. These are Reddit's real ads scopes, not the
 Credentials and the volatile token live in separate files, so a token refresh can never
 rewrite your credentials.
 
-- `~/.config/reddit-ads/config.json` (mode 600): `client_id` (Reddit's App ID),
-  `client_secret` (Reddit's Secret), `refresh_token`, `redirect_uri`,
-  `default_ad_account_id`, `default_profile_id`, optional `user_agent`.
+- `~/.config/reddit-ads/config.json` (mode 600): `app_id`, `app_secret`,
+  `refresh_token`, `redirect_uri`, `default_ad_account_id`, `default_profile_id`,
+  optional `user_agent`.
 - `~/.config/reddit-ads/token.json` (mode 600): cached access token and its expiry.
 
 Both files are written 600 (owner read/write only) and the `reddit-ads` directory is
@@ -112,7 +113,7 @@ file was created or hand-edited with looser permissions, the CLI tightens it bac
 rather than trusting it as-is.
 
 Environment variables override the files, so cron and CI need no home directory:
-`REDDIT_ADS_CLIENT_ID`, `REDDIT_ADS_CLIENT_SECRET`, `REDDIT_ADS_REFRESH_TOKEN`,
+`REDDIT_ADS_APP_ID`, `REDDIT_ADS_APP_SECRET`, `REDDIT_ADS_REFRESH_TOKEN`,
 `REDDIT_ADS_REDIRECT_URI`, `REDDIT_ADS_ACCOUNT_ID`, `REDDIT_ADS_PROFILE_ID`,
 `REDDIT_ADS_USER_AGENT`.
 

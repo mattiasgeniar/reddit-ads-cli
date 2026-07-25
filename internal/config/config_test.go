@@ -9,7 +9,7 @@ import (
 
 func TestSaveEnforces600(t *testing.T) {
 	dir := t.TempDir()
-	cfg := &Config{ClientID: "abc", ClientSecret: "shh", dir: dir}
+	cfg := &Config{AppID: "abc", AppSecret: "shh", dir: dir}
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestLoadHardensLoosePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, configFileName)
 	// Simulate a config that was created or hand-edited world-readable.
-	if err := os.WriteFile(path, []byte(`{"client_id":"x","client_secret":"secret"}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"app_id":"x","app_secret":"secret"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(dir); err != nil {
@@ -77,18 +77,18 @@ func TestLoadTokenHardensLoosePermissions(t *testing.T) {
 
 func TestEnvOverridesFile(t *testing.T) {
 	dir := t.TempDir()
-	seed := &Config{ClientID: "from-file", RefreshToken: "file-refresh", dir: dir}
+	seed := &Config{AppID: "from-file", RefreshToken: "file-refresh", dir: dir}
 	if err := seed.Save(); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Setenv("REDDIT_ADS_CLIENT_ID", "from-env")
+	t.Setenv("REDDIT_ADS_APP_ID", "from-env")
 	cfg, err := Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ClientID != "from-env" {
-		t.Errorf("ClientID = %q, want env value", cfg.ClientID)
+	if cfg.AppID != "from-env" {
+		t.Errorf("AppID = %q, want env value", cfg.AppID)
 	}
 	if cfg.RefreshToken != "file-refresh" {
 		t.Errorf("RefreshToken = %q, want file value (env unset)", cfg.RefreshToken)

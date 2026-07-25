@@ -29,7 +29,7 @@ func runCLI(t *testing.T, server *httptest.Server, stdin string, args ...string)
 	t.Helper()
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "config.json"), `{
-		"client_id":"id","client_secret":"secret","refresh_token":"RT",
+		"app_id":"id","app_secret":"secret","refresh_token":"RT",
 		"default_ad_account_id":"acc_1","user_agent":"test"
 	}`)
 	// A far-future expiry keeps ensureToken from refreshing.
@@ -168,7 +168,7 @@ func TestAuthLoginWizardPromptsExchangesAndPersists(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("REDDIT_ADS_TOKEN_URL", tokenSrv.URL)
 
-	// Wizard prompts in order: client id, secret, redirect (blank = default),
+	// Wizard prompts in order: app id, secret, redirect (blank = default),
 	// then the pasted redirect URL that carries the code.
 	stdin := "cid\nsecret\n\nhttps://cb/callback?code=the-code#_\n"
 	var out bytes.Buffer
@@ -181,7 +181,7 @@ func TestAuthLoginWizardPromptsExchangesAndPersists(t *testing.T) {
 
 	// The credentials and refresh token must be persisted so login is a one-time thing.
 	saved := readJSON(t, filepath.Join(dir, "config.json"))
-	if saved["client_id"] != "cid" || saved["client_secret"] != "secret" {
+	if saved["app_id"] != "cid" || saved["app_secret"] != "secret" {
 		t.Errorf("credentials not persisted: %v", saved)
 	}
 	if saved["refresh_token"] != "RT" {
@@ -254,11 +254,12 @@ func TestAuthLoginCapturesCodeViaLoopback(t *testing.T) {
 	}
 }
 
-func TestAuthLoginAcceptsClientIDAliasFlags(t *testing.T) {
+func TestAuthLoginPersistsCredentialsFromFlags(t *testing.T) {
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The App ID is sent to Reddit as the OAuth client id (HTTP Basic username).
 		user, _, _ := r.BasicAuth()
 		if user != "APPID" {
-			t.Errorf("app id not sent as OAuth client id: basic user = %q", user)
+			t.Errorf("app id not sent as the OAuth basic-auth user: got %q", user)
 		}
 		_, _ = io.WriteString(w, `{"access_token":"AT","refresh_token":"RT","expires_in":3600}`)
 	}))
@@ -267,18 +268,19 @@ func TestAuthLoginAcceptsClientIDAliasFlags(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("REDDIT_ADS_TOKEN_URL", tokenSrv.URL)
 
-	// Only the pasted code is prompted; credentials come from the legacy alias flags.
+	// Credentials come from flags; only the pasted code is prompted. Redirect "https://cb/x"
+	// can't bind a loopback, so it falls back to the pasted code cleanly.
 	var out bytes.Buffer
 	app := &App{out: &out, in: strings.NewReader("the-code\n")}
 	root := app.rootCmd()
 	root.SetArgs([]string{"--config", dir, "auth", "login",
-		"--client-id", "APPID", "--client-secret", "SECRET", "--redirect-uri", "https://cb/x"})
+		"--app-id", "APPID", "--app-secret", "SECRET", "--redirect-uri", "https://cb/x"})
 	if err := root.Execute(); err != nil {
-		t.Fatalf("login with alias flags failed: %v\n%s", err, out.String())
+		t.Fatalf("login with flags failed: %v\n%s", err, out.String())
 	}
 	saved := readJSON(t, filepath.Join(dir, "config.json"))
-	if saved["client_id"] != "APPID" || saved["client_secret"] != "SECRET" {
-		t.Errorf("alias flags did not persist credentials: %v", saved)
+	if saved["app_id"] != "APPID" || saved["app_secret"] != "SECRET" {
+		t.Errorf("flags did not persist credentials as app_id/app_secret: %v", saved)
 	}
 }
 

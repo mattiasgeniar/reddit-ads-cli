@@ -28,4 +28,4 @@
 ## Blocked on live verification
 - Dev app does not exist yet. Nothing that hits the live API (auth login exchange,
   reads, report, real writes) can be smoke-tested until a business admin creates the
-  developer app and we have client id/secret + a default ad account.
+  developer app and we have the App ID/Secret + a default ad account.

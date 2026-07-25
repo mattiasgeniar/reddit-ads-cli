@@ -40,8 +40,8 @@ reddit-ads auth refresh    # force a new access token from the stored refresh to
 
 If `auth status` errors with "not authorized", the user runs `reddit-ads auth login`
 themselves. It is interactive: it prompts for the App ID and Secret (the two values
-Reddit shows under Business > Developer Portal > Developer Applications; they are the
-OAuth client id and secret) and prints an authorize URL to open in a browser. When the
+Reddit shows under Business > Developer Portal > Developer Applications) and prints an
+authorize URL to open in a browser. When the
 browser is on the same machine, the CLI catches the redirect on a local server
 automatically; otherwise the user pastes the code or redirect URL back. On a headless or
 remote box, `reddit-ads auth login --manual` skips the local server. You cannot do this
