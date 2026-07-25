@@ -15,6 +15,8 @@ import (
 // Config holds the static credentials and defaults. It lives in config.json (mode
 // 600) and is never rewritten by a token refresh.
 type Config struct {
+	// ClientID and ClientSecret are the OAuth credentials. Reddit's UI labels them
+	// "App ID" and "Secret" under Developer Applications; the App ID is the client id.
 	ClientID           string `json:"client_id,omitempty"`
 	ClientSecret       string `json:"client_secret,omitempty"`
 	RefreshToken       string `json:"refresh_token,omitempty"`

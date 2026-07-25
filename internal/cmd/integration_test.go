@@ -189,6 +189,34 @@ func TestAuthLoginWizardPromptsExchangesAndPersists(t *testing.T) {
 	}
 }
 
+func TestAuthLoginAcceptsClientIDAliasFlags(t *testing.T) {
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, _, _ := r.BasicAuth()
+		if user != "APPID" {
+			t.Errorf("app id not sent as OAuth client id: basic user = %q", user)
+		}
+		_, _ = io.WriteString(w, `{"access_token":"AT","refresh_token":"RT","expires_in":3600}`)
+	}))
+	defer tokenSrv.Close()
+
+	dir := t.TempDir()
+	t.Setenv("REDDIT_ADS_TOKEN_URL", tokenSrv.URL)
+
+	// Only the pasted code is prompted; credentials come from the legacy alias flags.
+	var out bytes.Buffer
+	app := &App{out: &out, in: strings.NewReader("the-code\n")}
+	root := app.rootCmd()
+	root.SetArgs([]string{"--config", dir, "auth", "login",
+		"--client-id", "APPID", "--client-secret", "SECRET", "--redirect-uri", "https://cb/x"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("login with alias flags failed: %v\n%s", err, out.String())
+	}
+	saved := readJSON(t, filepath.Join(dir, "config.json"))
+	if saved["client_id"] != "APPID" || saved["client_secret"] != "SECRET" {
+		t.Errorf("alias flags did not persist credentials: %v", saved)
+	}
+}
+
 func readJSON(t *testing.T, path string) map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(path)

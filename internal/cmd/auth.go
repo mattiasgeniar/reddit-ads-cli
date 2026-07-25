@@ -24,45 +24,48 @@ func (a *App) authCmd() *cobra.Command {
 }
 
 func (a *App) authLoginCmd() *cobra.Command {
-	var clientID, clientSecret, redirectURI, state, scopes string
+	var appID, appSecret, clientID, clientSecret, redirectURI, state, scopes string
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Authorize the CLI (one-time, interactive)",
 		Long: "Walks you through the one-time OAuth flow. Run it bare and it asks for anything " +
-			"it needs, or pass --client-id/--client-secret/--redirect-uri for a non-interactive " +
-			"run (CI). It stores your credentials and a permanent refresh token, so you only do " +
-			"this once. When it prints the authorize URL, open it, click Allow, and paste back " +
-			"either the code or the whole redirect URL from your address bar.",
+			"it needs, or pass --app-id/--app-secret/--redirect-uri for a non-interactive run " +
+			"(CI). The App ID and Secret are the two values Reddit shows under Business > " +
+			"Developer Portal > Developer Applications. It stores them and a permanent refresh " +
+			"token, so you only do this once. When it prints the authorize URL, open it, click " +
+			"Allow, and paste back either the code or the whole redirect URL from your address bar.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := a.prompter()
 
-			// Flags win over config; whatever is still missing gets prompted for.
-			if clientID != "" {
-				a.cfg.ClientID = clientID
+			// --app-id is the real name (matches Reddit's UI); --client-id is kept as an
+			// alias because the App ID is the OAuth client id. Flags win over config;
+			// whatever is still missing gets prompted for.
+			if v := firstNonEmpty(appID, clientID); v != "" {
+				a.cfg.ClientID = v
 			}
 			if a.cfg.ClientID == "" {
-				v, err := p.ask("Client ID", "")
+				v, err := p.ask("App ID", "")
 				if err != nil {
 					return err
 				}
 				a.cfg.ClientID = v
 			}
 			if a.cfg.ClientID == "" {
-				return fmt.Errorf("client id is required")
+				return fmt.Errorf("app id is required")
 			}
 
-			if clientSecret != "" {
-				a.cfg.ClientSecret = clientSecret
+			if v := firstNonEmpty(appSecret, clientSecret); v != "" {
+				a.cfg.ClientSecret = v
 			}
 			if a.cfg.ClientSecret == "" {
-				v, err := p.askSecret("Client secret")
+				v, err := p.askSecret("App secret")
 				if err != nil {
 					return err
 				}
 				a.cfg.ClientSecret = v
 			}
 			if a.cfg.ClientSecret == "" {
-				return fmt.Errorf("client secret is required")
+				return fmt.Errorf("app secret is required")
 			}
 
 			if redirectURI != "" {
@@ -107,12 +110,26 @@ func (a *App) authLoginCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&clientID, "client-id", "", "developer app client id (prompted if unset; persisted)")
-	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "developer app client secret (prompted if unset; persisted)")
+	cmd.Flags().StringVar(&appID, "app-id", "", "the App ID from Reddit's Developer Applications (prompted if unset; persisted)")
+	cmd.Flags().StringVar(&appSecret, "app-secret", "", "the Secret from Reddit's Developer Applications (prompted if unset; persisted)")
+	// Aliases: the App ID/Secret are the OAuth client id/secret. Kept for anyone who
+	// scripted against the earlier flag names.
+	cmd.Flags().StringVar(&clientID, "client-id", "", "alias for --app-id")
+	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "alias for --app-secret")
 	cmd.Flags().StringVar(&redirectURI, "redirect-uri", "", "redirect URI registered on the developer app (prompted if unset; persisted)")
 	cmd.Flags().StringVar(&state, "state", "reddit-ads-cli", "opaque state value echoed back in the redirect")
 	cmd.Flags().StringVar(&scopes, "scopes", api.V1Scopes, "comma-separated OAuth scopes")
 	return cmd
+}
+
+// firstNonEmpty returns the first non-empty string, or "".
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // extractAuthCode pulls the OAuth code out of whatever the user pasted: a bare code, or

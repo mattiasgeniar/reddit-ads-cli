@@ -42,9 +42,10 @@ Requires Go 1.26+ to build from source.
 ## One-time authorization
 
 You need a developer app first. A business admin with a verified account creates it in
-Ads Manager under Business > Developer Portal, and notes the client id and client
-secret. For the redirect URI, register this exact value and you're done thinking about
-it:
+Ads Manager under Business > Developer Portal, which gives you two values Reddit labels
+**App ID** and **Secret** (the App ID is your OAuth client id, the Secret is the client
+secret; the API and this config use those OAuth names under the hood). For the redirect
+URI, register this exact value and you're done thinking about it:
 
 ```
 http://localhost:8080/reddit-ads/callback
@@ -59,8 +60,8 @@ Then just run:
 reddit-ads auth login
 ```
 
-It asks for the client id, the secret (hidden while you type), and the redirect URI
-(hit enter to accept the default above), then prints an authorize URL. Open it, click
+It asks for the App ID, the Secret (hidden while you type), and the redirect URI (hit
+enter to accept the default above), then prints an authorize URL. Open it, click
 Allow, and you land on your redirect URI with `?code=...` in the address bar. Paste the
 whole URL back, or just the code if you'd rather. That's it, the CLI exchanges it for a
 permanent refresh token and stores everything, so you only do this once.
@@ -68,7 +69,7 @@ permanent refresh token and stores everything, so you only do this once.
 Prefer flags for CI? They still work, and skip every prompt:
 
 ```
-reddit-ads auth login --client-id ID --client-secret SECRET --redirect-uri URL
+reddit-ads auth login --app-id ID --app-secret SECRET --redirect-uri URL
 ```
 
 Check it worked:
@@ -85,9 +86,9 @@ The v1 scopes are `adsread,adsedit`. These are Reddit's real ads scopes, not the
 Credentials and the volatile token live in separate files, so a token refresh can never
 rewrite your credentials.
 
-- `~/.config/reddit-ads/config.json` (mode 600): `client_id`, `client_secret`,
-  `refresh_token`, `redirect_uri`, `default_ad_account_id`, `default_profile_id`,
-  optional `user_agent`.
+- `~/.config/reddit-ads/config.json` (mode 600): `client_id` (Reddit's App ID),
+  `client_secret` (Reddit's Secret), `refresh_token`, `redirect_uri`,
+  `default_ad_account_id`, `default_profile_id`, optional `user_agent`.
 - `~/.config/reddit-ads/token.json` (mode 600): cached access token and its expiry.
 
 Both files are written 600 (owner read/write only) and the `reddit-ads` directory is

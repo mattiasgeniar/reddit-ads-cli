@@ -22,6 +22,15 @@ func TestExtractAuthCode(t *testing.T) {
 	}
 }
 
+func TestFirstNonEmpty(t *testing.T) {
+	if got := firstNonEmpty("", "", "x", "y"); got != "x" {
+		t.Errorf("firstNonEmpty = %q, want x", got)
+	}
+	if got := firstNonEmpty("", ""); got != "" {
+		t.Errorf("firstNonEmpty of all-empty = %q, want empty", got)
+	}
+}
+
 func TestPrompterAskUsesDefaultOnEmptyLine(t *testing.T) {
 	app := &App{out: &bytes.Buffer{}, in: strings.NewReader("\n")}
 	p := app.prompter()
