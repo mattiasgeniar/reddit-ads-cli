@@ -16,8 +16,8 @@ func (a *App) adsCmd() *cobra.Command {
 	cmd.AddCommand(
 		a.adsListCmd(),
 		a.adsGetCmd(),
-		a.statusWriteCmd("pause", "Pause an ad", "PAUSED", a.patchAdStatus),
-		a.statusWriteCmd("resume", "Resume an ad", "ACTIVE", a.patchAdStatus),
+		a.statusWriteCmd("pause", "Pause an ad", "PAUSED", (*api.Client).PatchAd),
+		a.statusWriteCmd("resume", "Resume an ad", "ACTIVE", (*api.Client).PatchAd),
 		a.adsClickURLCmd(),
 	)
 	return cmd

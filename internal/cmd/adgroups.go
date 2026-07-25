@@ -17,8 +17,8 @@ func (a *App) adGroupsCmd() *cobra.Command {
 	cmd.AddCommand(
 		a.adGroupsListCmd(),
 		a.adGroupsGetCmd(),
-		a.statusWriteCmd("pause", "Pause an ad group", "PAUSED", a.patchAdGroupStatus),
-		a.statusWriteCmd("resume", "Resume an ad group", "ACTIVE", a.patchAdGroupStatus),
+		a.statusWriteCmd("pause", "Pause an ad group", "PAUSED", (*api.Client).PatchAdGroup),
+		a.statusWriteCmd("resume", "Resume an ad group", "ACTIVE", (*api.Client).PatchAdGroup),
 		a.adGroupsBidCmd(),
 		a.adGroupsBudgetCmd(),
 		a.adGroupsTargetingCmd(),
@@ -176,12 +176,4 @@ func (a *App) adGroupsBudgetCmd() *cobra.Command {
 	cmd.Flags().Float64Var(&goal, "goal", 0, "goal value in dollars")
 	cmd.Flags().StringVar(&goalType, "goal-type", "", "DAILY_SPEND or LIFETIME_SPEND")
 	return cmd
-}
-
-func (a *App) patchAdGroupStatus(id, status string) error {
-	client, err := a.apiClient()
-	if err != nil {
-		return err
-	}
-	return client.PatchAdGroup(id, map[string]any{"configured_status": status})
 }

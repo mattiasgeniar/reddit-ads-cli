@@ -15,8 +15,8 @@ func (a *App) campaignsCmd() *cobra.Command {
 	cmd.AddCommand(
 		a.campaignsListCmd(),
 		a.campaignsGetCmd(),
-		a.statusWriteCmd("pause", "Pause a campaign", "PAUSED", a.patchCampaignStatus),
-		a.statusWriteCmd("resume", "Resume a campaign", "ACTIVE", a.patchCampaignStatus),
+		a.statusWriteCmd("pause", "Pause a campaign", "PAUSED", (*api.Client).PatchCampaign),
+		a.statusWriteCmd("resume", "Resume a campaign", "ACTIVE", (*api.Client).PatchCampaign),
 		a.campaignsBudgetCmd(),
 	)
 	return cmd
@@ -139,12 +139,4 @@ func (a *App) campaignsBudgetCmd() *cobra.Command {
 	cmd.Flags().Float64Var(&spendCap, "spend-cap", 0, "lifetime spend cap in dollars")
 	cmd.Flags().Float64Var(&goal, "goal", 0, "CBO goal value in dollars")
 	return cmd
-}
-
-func (a *App) patchCampaignStatus(id, status string) error {
-	client, err := a.apiClient()
-	if err != nil {
-		return err
-	}
-	return client.PatchCampaign(id, map[string]any{"configured_status": status})
 }

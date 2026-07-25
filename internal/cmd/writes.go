@@ -10,9 +10,10 @@ import (
 )
 
 // statusWriteCmd builds a pause/resume-style command: it takes one object id,
-// confirms, and calls patchFn with the target configured_status. Sharing this keeps
-// pause/resume identical across campaigns, ad groups, and ads.
-func (a *App) statusWriteCmd(use, short, status string, patchFn func(id, status string) error) *cobra.Command {
+// confirms, and calls patch with configured_status set to the target. patch is a
+// PatchCampaign/PatchAdGroup/PatchAd method expression, so pause/resume stay identical
+// across campaigns, ad groups, and ads without a per-type wrapper.
+func (a *App) statusWriteCmd(use, short, status string, patch func(*api.Client, string, map[string]any) error) *cobra.Command {
 	return &cobra.Command{
 		Use:   use + " <id>",
 		Short: short,
@@ -22,7 +23,11 @@ func (a *App) statusWriteCmd(use, short, status string, patchFn func(id, status 
 			if err != nil || !ok {
 				return err
 			}
-			if err := patchFn(args[0], status); err != nil {
+			client, err := a.apiClient()
+			if err != nil {
+				return err
+			}
+			if err := patch(client, args[0], map[string]any{"configured_status": status}); err != nil {
 				return err
 			}
 			a.reportWrite(strings.Fields(short)[0], args[0], "configured_status="+status)
