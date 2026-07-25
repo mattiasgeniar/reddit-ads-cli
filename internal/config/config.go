@@ -192,11 +192,28 @@ func hardenPerms(path string) {
 	}
 }
 
-// writeFile600 writes atomically-ish with 600 perms. os.WriteFile respects the mode
-// only on create, so we chmod afterwards to be certain even when the file existed.
+// writeFile600 writes a sensitive file atomically at mode 600: it writes a temp file in
+// the same directory (created 0600 from the start, so the secret is never briefly
+// world-readable) and renames it over the target. The rename is atomic, so a crash
+// mid-write cannot leave a half-written config.json or token.json.
 func writeFile600(path string, data []byte) error {
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
 		return err
 	}
-	return os.Chmod(path, 0o600)
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }() // no-op after a successful rename
+
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
