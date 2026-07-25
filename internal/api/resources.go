@@ -42,10 +42,33 @@ func (c *Client) AdAccounts() ([]AdAccount, error) {
 	return all, nil
 }
 
+// Path helpers keep the typed list methods and their --json raw counterparts in sync
+// so the two can never drift apart.
+func CampaignsPath(accountID string) string { return "/ad_accounts/" + accountID + "/campaigns" }
+func AdGroupsPath(accountID string) string  { return "/ad_accounts/" + accountID + "/ad_groups" }
+func AdsPath(accountID string) string       { return "/ad_accounts/" + accountID + "/ads" }
+
+// AdAccountsRaw returns the raw ad account elements across all businesses, for --json.
+func (c *Client) AdAccountsRaw() ([]json.RawMessage, error) {
+	businesses, err := c.Businesses()
+	if err != nil {
+		return nil, err
+	}
+	var all []json.RawMessage
+	for _, b := range businesses {
+		elems, err := c.GetList("/businesses/" + b.ID + "/ad_accounts")
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, elems...)
+	}
+	return all, nil
+}
+
 // Campaigns lists an account's campaigns.
 func (c *Client) Campaigns(accountID string) ([]Campaign, error) {
 	var out []Campaign
-	err := c.GetListInto("/ad_accounts/"+accountID+"/campaigns", &out)
+	err := c.GetListInto(CampaignsPath(accountID), &out)
 	return out, err
 }
 
@@ -61,7 +84,7 @@ func (c *Client) Campaign(id string) (*Campaign, error) {
 // AdGroups lists an account's ad groups.
 func (c *Client) AdGroups(accountID string) ([]AdGroup, error) {
 	var out []AdGroup
-	err := c.GetListInto("/ad_accounts/"+accountID+"/ad_groups", &out)
+	err := c.GetListInto(AdGroupsPath(accountID), &out)
 	return out, err
 }
 
@@ -77,7 +100,7 @@ func (c *Client) AdGroup(id string) (*AdGroup, error) {
 // Ads lists an account's ads.
 func (c *Client) Ads(accountID string) ([]Ad, error) {
 	var out []Ad
-	err := c.GetListInto("/ad_accounts/"+accountID+"/ads", &out)
+	err := c.GetListInto(AdsPath(accountID), &out)
 	return out, err
 }
 
@@ -111,24 +134,42 @@ func (c *Client) PatchAd(id string, data map[string]any) error {
 	return c.patchData("/ads/"+id, data)
 }
 
-// SearchCommunities resolves a free-text query to targetable communities.
-func (c *Client) SearchCommunities(query string) ([]Community, error) {
+func communitySearchPath(query string) string {
 	q := url.Values{}
 	q.Set("query", query)
-	var out []Community
-	err := c.GetListInto("/targeting/communities/search?"+q.Encode(), &out)
-	return out, err
+	return "/targeting/communities/search?" + q.Encode()
 }
 
-// SuggestCommunities expands from seed community names into similar communities.
-func (c *Client) SuggestCommunities(names []string) ([]Community, error) {
+func communitySuggestPath(names []string) string {
 	q := url.Values{}
 	for _, n := range names {
 		q.Add("names", n)
 	}
+	return "/targeting/communities/suggestions?" + q.Encode()
+}
+
+// SearchCommunities resolves a free-text query to targetable communities.
+func (c *Client) SearchCommunities(query string) ([]Community, error) {
 	var out []Community
-	err := c.GetListInto("/targeting/communities/suggestions?"+q.Encode(), &out)
+	err := c.GetListInto(communitySearchPath(query), &out)
 	return out, err
+}
+
+// SearchCommunitiesRaw returns the raw community elements for --json.
+func (c *Client) SearchCommunitiesRaw(query string) ([]json.RawMessage, error) {
+	return c.GetList(communitySearchPath(query))
+}
+
+// SuggestCommunities expands from seed community names into similar communities.
+func (c *Client) SuggestCommunities(names []string) ([]Community, error) {
+	var out []Community
+	err := c.GetListInto(communitySuggestPath(names), &out)
+	return out, err
+}
+
+// SuggestCommunitiesRaw returns the raw community elements for --json.
+func (c *Client) SuggestCommunitiesRaw(names []string) ([]json.RawMessage, error) {
+	return c.GetList(communitySuggestPath(names))
 }
 
 // ReportRequest is the body of POST /ad_accounts/{id}/reports. Dates must be

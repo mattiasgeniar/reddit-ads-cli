@@ -27,6 +27,13 @@ func (a *App) communitiesSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if a.jsonOut {
+				raw, err := client.SearchCommunitiesRaw(args[0])
+				if err != nil {
+					return err
+				}
+				return printJSONValue(a.out, raw)
+			}
 			results, err := client.SearchCommunities(args[0])
 			if err != nil {
 				return err
@@ -46,6 +53,13 @@ func (a *App) communitiesSuggestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if a.jsonOut {
+				raw, err := client.SuggestCommunitiesRaw(args)
+				if err != nil {
+					return err
+				}
+				return printJSONValue(a.out, raw)
+			}
 			results, err := client.SuggestCommunities(args)
 			if err != nil {
 				return err
@@ -56,9 +70,6 @@ func (a *App) communitiesSuggestCmd() *cobra.Command {
 }
 
 func (a *App) renderCommunities(results []api.Community) error {
-	if a.jsonOut {
-		return printJSONValue(a.out, results)
-	}
 	t := newTable("ID", "NAME", "SUBSCRIBERS")
 	for _, c := range results {
 		t.add(c.ID, orDash(c.Name), strconv.FormatInt(c.SubscriberCount, 10))

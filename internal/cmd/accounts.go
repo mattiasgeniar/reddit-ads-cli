@@ -15,12 +15,16 @@ func (a *App) accountsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if a.jsonOut {
+				raw, err := client.AdAccountsRaw()
+				if err != nil {
+					return err
+				}
+				return printJSONValue(a.out, raw)
+			}
 			accounts, err := client.AdAccounts()
 			if err != nil {
 				return err
-			}
-			if a.jsonOut {
-				return printJSONValue(a.out, accounts)
 			}
 			t := newTable("ID", "NAME", "CURRENCY", "TYPE", "TIMEZONE")
 			for _, acct := range accounts {

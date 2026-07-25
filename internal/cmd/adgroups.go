@@ -39,12 +39,16 @@ func (a *App) adGroupsListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if a.jsonOut {
+				raw, err := client.GetList(api.AdGroupsPath(account))
+				if err != nil {
+					return err
+				}
+				return printJSONValue(a.out, raw)
+			}
 			groups, err := client.AdGroups(account)
 			if err != nil {
 				return err
-			}
-			if a.jsonOut {
-				return printJSONValue(a.out, groups)
 			}
 			t := newTable("ID", "NAME", "STATUS", "EFFECTIVE", "CAMPAIGN", "BID", "GOAL")
 			for _, g := range groups {

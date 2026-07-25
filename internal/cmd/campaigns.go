@@ -35,12 +35,16 @@ func (a *App) campaignsListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if a.jsonOut {
+				raw, err := client.GetList(api.CampaignsPath(account))
+				if err != nil {
+					return err
+				}
+				return printJSONValue(a.out, raw)
+			}
 			campaigns, err := client.Campaigns(account)
 			if err != nil {
 				return err
-			}
-			if a.jsonOut {
-				return printJSONValue(a.out, campaigns)
 			}
 			t := newTable("ID", "NAME", "STATUS", "EFFECTIVE", "OBJECTIVE", "SPEND_CAP", "CBO")
 			for _, c := range campaigns {

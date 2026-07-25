@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/mattiasgeniar/reddit-ads-cli/internal/api"
 	"github.com/spf13/cobra"
 )
 
@@ -34,12 +35,16 @@ func (a *App) adsListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if a.jsonOut {
+				raw, err := client.GetList(api.AdsPath(account))
+				if err != nil {
+					return err
+				}
+				return printJSONValue(a.out, raw)
+			}
 			ads, err := client.Ads(account)
 			if err != nil {
 				return err
-			}
-			if a.jsonOut {
-				return printJSONValue(a.out, ads)
 			}
 			t := newTable("ID", "NAME", "STATUS", "EFFECTIVE", "AD_GROUP", "POST_ID")
 			for _, ad := range ads {
