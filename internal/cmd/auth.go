@@ -125,6 +125,17 @@ func (a *App) authLoginCmd() *cobra.Command {
 			}
 
 			fmt.Fprintf(a.out, "\nDone. Credentials and refresh token saved to %s (mode 600).\n", a.cfg.Dir())
+
+			// Pick a default ad account now so `campaigns list` and friends work without
+			// --account. Best-effort: auth already succeeded, so a listing hiccup here
+			// just prints a hint instead of failing the login.
+			if a.cfg.DefaultAdAccountID == "" {
+				if err := a.setupDefaultAccount(p); err != nil {
+					fmt.Fprintf(a.out, "Could not list your ad accounts (%v).\n", err)
+					fmt.Fprintln(a.out, "Set one later with `default_ad_account_id` in config or pass --account.")
+				}
+			}
+
 			fmt.Fprintln(a.out, "Try `reddit-ads auth status` or `reddit-ads accounts list`.")
 			return nil
 		},
@@ -195,6 +206,62 @@ func (a *App) obtainAuthCode(p *prompter, authURL, redirectURI, state string, ma
 	case c := <-pasteCh:
 		return c, nil
 	}
+}
+
+// setupDefaultAccount resolves the user's ad accounts right after login and records a
+// default_ad_account_id: automatically when there is exactly one, or by asking which to
+// use when there are several. It only returns an error for an actual listing failure;
+// "no accounts" and "user skipped the prompt" are normal outcomes.
+func (a *App) setupDefaultAccount(p *prompter) error {
+	client, err := a.apiClient()
+	if err != nil {
+		return err
+	}
+	accounts, err := client.AdAccounts()
+	if err != nil {
+		return err
+	}
+
+	if len(accounts) == 0 {
+		fmt.Fprintln(a.out, "No ad accounts are visible on this login yet.")
+		return nil
+	}
+	if len(accounts) == 1 {
+		return a.saveDefaultAccount(accounts[0])
+	}
+
+	fmt.Fprintln(a.out, "\nYou can access several ad accounts:")
+	t := newTable("#", "ID", "NAME", "CURRENCY")
+	for i, acct := range accounts {
+		t.add(strconv.Itoa(i+1), acct.ID, orDash(acct.Name), orDash(acct.Currency))
+	}
+	t.render(a.out)
+
+	choice, err := p.ask("Which number should be the default ad account? (enter to skip)", "")
+	if err != nil || choice == "" {
+		fmt.Fprintln(a.out, "No default set. Pass --account or set default_ad_account_id per command.")
+		return nil
+	}
+	n, err := strconv.Atoi(choice)
+	if err != nil || n < 1 || n > len(accounts) {
+		fmt.Fprintf(a.out, "%q is not one of 1-%d; no default set.\n", choice, len(accounts))
+		return nil
+	}
+	return a.saveDefaultAccount(accounts[n-1])
+}
+
+// saveDefaultAccount persists an ad account as the default and confirms it.
+func (a *App) saveDefaultAccount(acct api.AdAccount) error {
+	a.cfg.DefaultAdAccountID = acct.ID
+	if err := a.cfg.Save(); err != nil {
+		return err
+	}
+	label := acct.ID
+	if acct.Name != "" {
+		label = fmt.Sprintf("%s (%s)", acct.ID, acct.Name)
+	}
+	fmt.Fprintf(a.out, "Default ad account set to %s.\n", label)
+	return nil
 }
 
 // randomState returns a random hex nonce for the OAuth state parameter.

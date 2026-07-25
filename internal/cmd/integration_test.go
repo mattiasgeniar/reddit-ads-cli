@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mattiasgeniar/reddit-ads-cli/internal/config"
 )
 
 // capturedRequest records what a fake API server received, so a test can assert on
@@ -165,8 +167,15 @@ func TestAuthLoginWizardPromptsExchangesAndPersists(t *testing.T) {
 	}))
 	defer tokenSrv.Close()
 
+	// After login the CLI looks up ad accounts to pick a default; keep that offline.
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[],"pagination":{}}`)
+	}))
+	defer apiSrv.Close()
+
 	dir := t.TempDir()
 	t.Setenv("REDDIT_ADS_TOKEN_URL", tokenSrv.URL)
+	t.Setenv("REDDIT_ADS_BASE_URL", apiSrv.URL)
 
 	// Wizard prompts in order: app id, secret, redirect (blank = default),
 	// then the pasted redirect URL that carries the code.
@@ -202,6 +211,12 @@ func TestAuthLoginCapturesCodeViaLoopback(t *testing.T) {
 	}))
 	defer tokenSrv.Close()
 
+	// After login the CLI looks up ad accounts to pick a default; keep that offline.
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[],"pagination":{}}`)
+	}))
+	defer apiSrv.Close()
+
 	// Reserve a free port, then hand it to the CLI as the redirect so the loopback
 	// server binds it. Small TOCTOU window, fine for a test.
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
@@ -214,6 +229,7 @@ func TestAuthLoginCapturesCodeViaLoopback(t *testing.T) {
 
 	dir := t.TempDir()
 	t.Setenv("REDDIT_ADS_TOKEN_URL", tokenSrv.URL)
+	t.Setenv("REDDIT_ADS_BASE_URL", apiSrv.URL)
 
 	var out bytes.Buffer
 	// Empty stdin: no paste, so the browser redirect is what completes the login.
@@ -267,8 +283,15 @@ func TestAuthLoginPersistsCredentialsFromFlags(t *testing.T) {
 	}))
 	defer tokenSrv.Close()
 
+	// After login the CLI looks up ad accounts to pick a default; keep that offline.
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[],"pagination":{}}`)
+	}))
+	defer apiSrv.Close()
+
 	dir := t.TempDir()
 	t.Setenv("REDDIT_ADS_TOKEN_URL", tokenSrv.URL)
+	t.Setenv("REDDIT_ADS_BASE_URL", apiSrv.URL)
 
 	// Credentials come from flags; only the pasted code is prompted. Redirect "https://cb/x"
 	// can't bind a loopback, so it falls back to the pasted code cleanly.
@@ -330,6 +353,90 @@ func TestReportRunsUnderDryRun(t *testing.T) {
 	}
 	if !strings.Contains(out, "0.50") {
 		t.Errorf("report under --dry-run did not render metrics (spend 0.50):\n%s", out)
+	}
+}
+
+// authedApp builds an App with a valid cached token pointed at baseURL, for exercising
+// post-login steps like default-account resolution directly.
+func authedApp(t *testing.T, baseURL, stdin string, out *bytes.Buffer) *App {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.json"), `{"app_id":"id","app_secret":"secret","refresh_token":"RT","user_agent":"test"}`)
+	writeFile(t, filepath.Join(dir, "token.json"), `{"access_token":"AT","expires_at":"2999-01-01T00:00:00Z"}`)
+	t.Setenv("REDDIT_ADS_BASE_URL", baseURL)
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &App{cfg: cfg, out: out, in: strings.NewReader(stdin)}
+}
+
+// accountsServer serves fixed JSON per request path, for the businesses/ad_accounts fan-out.
+func accountsServer(bodies map[string]string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if body, ok := bodies[r.URL.Path]; ok {
+			_, _ = io.WriteString(w, body)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+}
+
+func TestSetupDefaultAccountAutoSetsLoneAccount(t *testing.T) {
+	srv := accountsServer(map[string]string{
+		"/me/businesses":             `{"data":[{"id":"b1"}],"pagination":{}}`,
+		"/businesses/b1/ad_accounts": `{"data":[{"id":"acc_solo","name":"Solo"}],"pagination":{}}`,
+	})
+	defer srv.Close()
+
+	var out bytes.Buffer
+	app := authedApp(t, srv.URL, "", &out)
+	if err := app.setupDefaultAccount(app.prompter()); err != nil {
+		t.Fatal(err)
+	}
+	if app.cfg.DefaultAdAccountID != "acc_solo" {
+		t.Errorf("lone account not auto-set as default: %q", app.cfg.DefaultAdAccountID)
+	}
+	saved := readJSON(t, filepath.Join(app.cfg.Dir(), "config.json"))
+	if saved["default_ad_account_id"] != "acc_solo" {
+		t.Errorf("default not persisted to config: %v", saved)
+	}
+}
+
+func TestSetupDefaultAccountPromptsAmongMany(t *testing.T) {
+	srv := accountsServer(map[string]string{
+		"/me/businesses":             `{"data":[{"id":"b1"}],"pagination":{}}`,
+		"/businesses/b1/ad_accounts": `{"data":[{"id":"acc_1","name":"One"},{"id":"acc_2","name":"Two"}],"pagination":{}}`,
+	})
+	defer srv.Close()
+
+	var out bytes.Buffer
+	app := authedApp(t, srv.URL, "2\n", &out)
+	if err := app.setupDefaultAccount(app.prompter()); err != nil {
+		t.Fatal(err)
+	}
+	if app.cfg.DefaultAdAccountID != "acc_2" {
+		t.Errorf("prompt pick did not select the 2nd account: %q", app.cfg.DefaultAdAccountID)
+	}
+	if !strings.Contains(out.String(), "acc_1") || !strings.Contains(out.String(), "acc_2") {
+		t.Errorf("account choices were not listed:\n%s", out.String())
+	}
+}
+
+func TestSetupDefaultAccountSkipsWhenNoChoice(t *testing.T) {
+	srv := accountsServer(map[string]string{
+		"/me/businesses":             `{"data":[{"id":"b1"}],"pagination":{}}`,
+		"/businesses/b1/ad_accounts": `{"data":[{"id":"acc_1"},{"id":"acc_2"}],"pagination":{}}`,
+	})
+	defer srv.Close()
+
+	var out bytes.Buffer
+	app := authedApp(t, srv.URL, "", &out) // no input: skip, don't hang
+	if err := app.setupDefaultAccount(app.prompter()); err != nil {
+		t.Fatal(err)
+	}
+	if app.cfg.DefaultAdAccountID != "" {
+		t.Errorf("no choice should leave the default unset, got %q", app.cfg.DefaultAdAccountID)
 	}
 }
 

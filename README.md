@@ -52,9 +52,6 @@ redirect URI, register this exact value and you're done thinking about it:
 http://localhost:8080/reddit-ads/callback
 ```
 
-It never has to serve anything. You copy the `code` out of the address bar by hand, so
-nothing listens on that port.
-
 Then just run:
 
 ```
@@ -79,6 +76,10 @@ Two flags for the loopback capture:
 
 Either way the CLI exchanges the code for a permanent refresh token and stores
 everything, so you only do this once.
+
+Login also picks your default ad account: with exactly one it sets it automatically,
+and with several it lists them and asks which to use. That becomes
+`default_ad_account_id`, so `campaigns list` and the rest work without `--account`.
 
 Prefer flags for CI? They still work, and skip every prompt:
 
