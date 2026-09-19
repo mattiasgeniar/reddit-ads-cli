@@ -48,13 +48,16 @@ func isMicroMetric(key string) bool {
 }
 
 func (a *App) reportCmd() *cobra.Command {
-	var from, to, fieldsFlag, breakdownsFlag, by, tz string
+	var from, to, fieldsFlag, breakdownsFlag, by, tz, format string
 	cmd := &cobra.Command{
 		Use:   "report",
 		Short: "Run a performance report (POST /ad_accounts/{id}/reports)",
 		Long: "Dates are YYYY-MM-DD (expanded to hour granularity, --to is exclusive) or a full " +
 			"YYYY-MM-DDTHH:00:00Z timestamp. Money fields print as dollars; use --json for raw " +
-			"microcurrency exactly as Reddit returns it.",
+			"microcurrency exactly as Reddit returns it.\n\n" +
+			"--format=spend emits one normalised row per ad per day, in the shape shared by every " +
+			"CLI in this family, with money as integer cents. That is the output to pipe into an " +
+			"importer; --json is the output to read with jq.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if from == "" || to == "" {
 				return fmt.Errorf("--from and --to are required")
@@ -77,6 +80,16 @@ func (a *App) reportCmd() *cobra.Command {
 				return err
 			}
 
+			// --format=spend fixes both halves of the request, because its
+			// output shape is a contract with whatever consumes it and must
+			// not depend on flags the caller happened to pass.
+			if format == "spend" {
+				fields = spendFields
+				if breakdownsFlag == "" && by == "" {
+					breakdowns = []string{"AD_ID", "DATE"}
+				}
+			}
+
 			account, err := a.accountID()
 			if err != nil {
 				return err
@@ -92,6 +105,25 @@ func (a *App) reportCmd() *cobra.Command {
 				Fields:     fields,
 				Breakdowns: breakdowns,
 				TimeZoneID: tz,
+			}
+
+			if format == "spend" {
+				rows, err := client.Report(account, req)
+				if err != nil {
+					return err
+				}
+
+				currency, err := a.accountCurrency(client, account)
+				if err != nil {
+					return err
+				}
+
+				spend, err := spendRows(rows, currency)
+				if err != nil {
+					return err
+				}
+
+				return printJSONValue(a.out, spend)
 			}
 
 			if a.jsonOut {
@@ -116,6 +148,7 @@ func (a *App) reportCmd() *cobra.Command {
 	cmd.Flags().StringVar(&breakdownsFlag, "breakdowns", "", "comma-separated breakdown enums (max 3)")
 	cmd.Flags().StringVar(&by, "by", "", "breakdown shorthand: community,date,hour,ad,adgroup,campaign,keyword,interest,placement,country,gender")
 	cmd.Flags().StringVar(&tz, "tz", "", "time_zone_id for the report (defaults to the account timezone)")
+	cmd.Flags().StringVar(&format, "format", "", `output shape: "spend" emits normalised rows for import (implies --by ad,date)`)
 	return cmd
 }
 
@@ -230,4 +263,30 @@ func upperAll(ss []string) []string {
 		out[i] = strings.ToUpper(s)
 	}
 	return out
+}
+
+// accountCurrency looks up the currency the ad account bills in.
+//
+// Reddit's report rows carry no currency of their own, only microcurrency
+// integers, so the unit has to come from the account. Cached on the App because
+// a report is one command and this is one extra request either way.
+func (a *App) accountCurrency(client *api.Client, account string) (string, error) {
+	if a.currency != "" {
+		return a.currency, nil
+	}
+
+	accounts, err := client.AdAccounts()
+	if err != nil {
+		return "", err
+	}
+
+	for _, acct := range accounts {
+		if acct.ID == account {
+			a.currency = acct.Currency
+
+			return a.currency, nil
+		}
+	}
+
+	return "", fmt.Errorf("ad account %s not found, so its currency is unknown", account)
 }
