@@ -70,7 +70,7 @@ func TestSpendRowsNormalisesAReportRow(t *testing.T) {
 	rows := []map[string]json.RawMessage{
 		rawRow(t, `{"ad_id":"t2_ad1","campaign_id":"t2_cmp1","ad_group_id":"t2_ag1",
                     "date":"2026-09-17","spend":12550000,"impressions":5000,"clicks":120,
-                    "conversion_signup_total_items":7}`),
+                    "conversion_sign_up_clicks":5,"conversion_sign_up_views":2}`),
 	}
 
 	out, err := spendRows(rows, "eur")
@@ -135,20 +135,65 @@ func TestSpendRowsKeepsARowWithImpressionsButNoSpend(t *testing.T) {
 }
 
 // Which conversion metric a report carries depends on the campaign's
-// optimisation goal, so they are summed rather than read by name.
+// optimisation goal, so they are summed rather than read by name. Both halves
+// of Reddit's attribution count: click-attributed and view-attributed.
 func TestSpendRowsSumsWhicheverConversionMetricTheReportCarried(t *testing.T) {
 	rows := []map[string]json.RawMessage{
 		rawRow(t, `{"ad_id":"a","date":"2026-09-17","spend":10000,"clicks":1,
-                    "conversion_signup_total_items":3,"conversion_purchase_total_items":2,
-                    "conversion_purchase_total_value":9999}`),
+                    "conversion_sign_up_clicks":3,"conversion_sign_up_views":1,
+                    "conversion_purchase_clicks":2}`),
 	}
 
 	out, err := spendRows(rows, "EUR")
 	if err != nil {
 		t.Fatalf("spendRows: %v", err)
 	}
-	if out[0].Conversions != 5 {
-		t.Errorf("conversions = %d, want 3+2=5 (total_value must not be counted)", out[0].Conversions)
+	if out[0].Conversions != 6 {
+		t.Errorf("conversions = %d, want 3+1+2=6", out[0].Conversions)
+	}
+}
+
+// Money and rate columns share the conversion_ prefix and adding any of them to
+// a count gives a number that looks plausible and means nothing. Reddit's own
+// enum list is the source of these names, including its inconsistent spelling:
+// SIGN_UP in the count fields, SIGNUP in the value fields.
+func TestSpendRowsNeverAddsConversionValueOrRateToTheCount(t *testing.T) {
+	rows := []map[string]json.RawMessage{
+		rawRow(t, `{"ad_id":"a","date":"2026-09-17","spend":10000,"clicks":1,
+                    "conversion_sign_up_clicks":4,
+                    "conversion_signup_total_value":999900,
+                    "conversion_signup_avg_value":24999,
+                    "conversion_sign_up_ecpa":50000,
+                    "conversion_roas":312}`),
+	}
+
+	out, err := spendRows(rows, "EUR")
+	if err != nil {
+		t.Fatalf("spendRows: %v", err)
+	}
+	if out[0].Conversions != 4 {
+		t.Errorf("conversions = %d, want 4: only _clicks and _views are counts", out[0].Conversions)
+	}
+}
+
+// The field names --format=spend asks for must be ones Reddit actually has. A
+// name it does not recognise fails the entire request with a 400, which is how
+// CONVERSION_SIGNUP_TOTAL_ITEMS (a name that does not exist) was caught.
+func TestSpendFieldsUseRedditsRealEnumNames(t *testing.T) {
+	valid := map[string]bool{
+		"IMPRESSIONS":                true,
+		"CLICKS":                     true,
+		"SPEND":                      true,
+		"CONVERSION_SIGN_UP_CLICKS":  true,
+		"CONVERSION_SIGN_UP_VIEWS":   true,
+		"CONVERSION_PURCHASE_CLICKS": true,
+		"CONVERSION_PURCHASE_VIEWS":  true,
+	}
+
+	for _, field := range spendFields {
+		if !valid[field] {
+			t.Errorf("%q is not a Reddit report enum", field)
+		}
 	}
 }
 

@@ -31,7 +31,23 @@ type SpendRow struct {
 // spendFields are the metrics --format=spend needs, regardless of what --fields
 // says. Asking for them explicitly means the output shape does not depend on a
 // flag somebody forgot.
-var spendFields = []string{"IMPRESSIONS", "CLICKS", "SPEND", "CONVERSION_SIGNUP_TOTAL_ITEMS"}
+//
+// Reddit counts conversions as _CLICKS and _VIEWS, being click-attributed and
+// view-attributed, and has no _COUNT or _TOTAL_ITEMS for every event type.
+// TOTAL_ITEMS exists only for cart-shaped events and counts *items*, not
+// conversions, so it is the wrong column even where it exists.
+//
+// Watch the spelling: Reddit writes SIGN_UP in the count fields and SIGNUP in
+// the value fields. That is Reddit's inconsistency, not a typo here, and asking
+// for a name it does not have fails the whole request with a 400 that lists
+// every valid enum.
+var spendFields = []string{
+	"IMPRESSIONS",
+	"CLICKS",
+	"SPEND",
+	"CONVERSION_SIGN_UP_CLICKS",
+	"CONVERSION_PURCHASE_CLICKS",
+}
 
 // spendRows converts Reddit's report rows into the shared shape.
 //
@@ -140,17 +156,29 @@ func intField(raw json.RawMessage) int64 {
 	return i
 }
 
-// conversionsField picks whichever conversion count the report carried.
+// conversionsField sums whichever conversion columns the report carried.
 //
-// Which one that is depends on the campaign's optimisation goal, and a report
-// asked for one goal's metric returns nothing for another. Summing every
-// CONVERSION_*_TOTAL_ITEMS column is the only shape that works across a mixed
-// account without the caller having to say which goal it used.
+// Which ones those are depends on the campaign's optimisation goal, and a report
+// asked for one goal's metric returns nothing for another, so summing beats
+// naming. Both attribution halves are counted: Reddit splits a conversion into
+// click-attributed and view-attributed and neither is the whole number.
+//
+// Value and rate columns are deliberately excluded. _TOTAL_VALUE is money,
+// _AVG_VALUE is money, _ECPA is money and _CVR is a ratio; adding any of them to
+// a count produces a number that looks plausible and means nothing.
+//
+// This figure is only ever what the *platform* believes. It lands in
+// ad_spend.platform_conversions and must never be added to conversions counted
+// from our own database.
 func conversionsField(row map[string]json.RawMessage) int64 {
 	var total int64
 
 	for key, raw := range row {
-		if strings.HasPrefix(key, "conversion_") && strings.HasSuffix(key, "_total_items") {
+		if !strings.HasPrefix(key, "conversion_") {
+			continue
+		}
+
+		if strings.HasSuffix(key, "_clicks") || strings.HasSuffix(key, "_views") {
 			total += intField(raw)
 		}
 	}
