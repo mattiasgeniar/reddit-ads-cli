@@ -166,6 +166,49 @@ exactly as Reddit returns it, with the rows of every page in `data.metrics`. Met
 take up to six hours to stabilize. A window shorter than 24 hours needs `--by hour`:
 Reddit only reports whole days, so the CLI fetches one and cuts it by hour.
 
+#### `--format=spend`, for piping into something else
+
+```
+reddit-ads report --from 2026-09-01 --to 2026-09-18 --format spend
+```
+
+One normalised row per ad per day, money as **integer cents**, in a shape shared
+with sibling CLIs so a consumer never has to know which platform a row came from:
+
+```json
+[
+  {
+    "platform": "reddit",
+    "date": "2026-09-17",
+    "campaign_id": "t2_cmp1",
+    "ad_group_id": "t2_ag1",
+    "ad_id": "t2_ad1",
+    "spend_cents": 1255,
+    "currency": "EUR",
+    "impressions": 5000,
+    "clicks": 120,
+    "conversions": 7
+  }
+]
+```
+
+It fixes both the metrics and the breakdown (`--by ad,date`) so the output shape
+cannot be changed by a flag somebody forgot. Days where nothing happened are
+dropped; Reddit returns a row for every day in the range whether the ad ran or
+not, and a zero row in a cost table is a divide-by-zero waiting to happen.
+
+Three things worth knowing if you touch this:
+
+- **`--to` is exclusive.** Ask for the day after the last day you want.
+- **Currency comes from the ad account**, because report rows carry
+  microcurrency integers and no unit.
+- **Reddit counts conversions as `_CLICKS` and `_VIEWS`**, click-attributed and
+  view-attributed, and both are summed. There is no `_COUNT` or
+  `_TOTAL_ITEMS` for every event type, and `_TOTAL_ITEMS` counts *items* rather
+  than conversions where it does exist. Watch the spelling too: Reddit writes
+  `CONVERSION_SIGN_UP_CLICKS` but `CONVERSION_SIGNUP_TOTAL_VALUE`. Asking for a
+  field name it does not have fails the whole request with a 400.
+
 ### Targeting
 
 Subreddit targeting lives on the ad group, and the API replaces the whole targeting

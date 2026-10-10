@@ -26,6 +26,10 @@ type App struct {
 	dryRun    bool
 	configDir string
 
+	// currency is the ad account's billing currency, looked up once per run
+	// because report rows carry microcurrency integers and no unit.
+	currency string
+
 	out io.Writer
 	in  io.Reader
 }
