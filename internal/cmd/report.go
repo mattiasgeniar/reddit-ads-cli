@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/mattiasgeniar/reddit-ads-cli/internal/api"
 	"github.com/spf13/cobra"
@@ -86,27 +88,35 @@ func (a *App) reportCmd() *cobra.Command {
 				return err
 			}
 
+			window, err := newReportWindow(startsAt, endsAt, breakdowns)
+			if err != nil {
+				return err
+			}
 			req := api.ReportRequest{
 				StartsAt:   startsAt,
-				EndsAt:     endsAt,
+				EndsAt:     window.endsAt,
 				Fields:     fields,
 				Breakdowns: breakdowns,
 				TimeZoneID: tz,
 			}
 
+			result, err := client.Report(account, req)
+			if err != nil {
+				return err
+			}
+			result.Metrics = window.cut(result.Metrics)
+
 			if a.jsonOut {
-				raw, err := client.ReportRaw(account, req)
+				raw, err := json.Marshal(map[string]any{
+					"data":       result,
+					"pagination": map[string]any{"next_url": nil},
+				})
 				if err != nil {
 					return err
 				}
 				return printJSON(a.out, raw)
 			}
-
-			rows, err := client.Report(account, req)
-			if err != nil {
-				return err
-			}
-			a.renderReport(rows, breakdowns, fields)
+			a.renderReport(result.Metrics, breakdowns, fields)
 			return nil
 		},
 	}
@@ -185,6 +195,59 @@ func normalizeReportTime(v string) (string, error) {
 		return "", fmt.Errorf("expected YYYY-MM-DD, got %q", v)
 	}
 	return v + "T00:00:00Z", nil
+}
+
+// reportWindow maps the exclusive [--from, --to) onto Reddit's ends_at, which names the
+// start of the last 24 hours the report includes: asking for ends_at T returns data up
+// to T+24h. Measured on 2026-10-10, which is how a report for one day used to carry the
+// next day's spend as well. A window shorter than 24 hours cannot be said that way, so
+// it is fetched as the 24 hours from --from and cut to --to by each row's hour, which
+// only means anything when the rows are hourly.
+type reportWindow struct {
+	endsAt string
+	cutAt  time.Time
+}
+
+func newReportWindow(startsAt, endsAt string, breakdowns []string) (reportWindow, error) {
+	start, err := time.Parse(time.RFC3339, startsAt)
+	if err != nil {
+		return reportWindow{}, fmt.Errorf("--from: %w", err)
+	}
+	end, err := time.Parse(time.RFC3339, endsAt)
+	if err != nil {
+		return reportWindow{}, fmt.Errorf("--to: %w", err)
+	}
+	if !end.After(start) {
+		return reportWindow{}, fmt.Errorf("--to must be after --from (it is exclusive)")
+	}
+	last := end.Add(-24 * time.Hour)
+	if !last.Before(start) {
+		return reportWindow{endsAt: last.UTC().Format(time.RFC3339)}, nil
+	}
+	if !slices.Contains(breakdowns, "HOUR") {
+		return reportWindow{}, fmt.Errorf("a window shorter than 24 hours needs --by hour: Reddit reports whole days from --from")
+	}
+	return reportWindow{endsAt: startsAt, cutAt: end}, nil
+}
+
+// cut drops the rows at or after --to when the window had to be fetched as a full day.
+func (w reportWindow) cut(rows []map[string]json.RawMessage) []map[string]json.RawMessage {
+	if w.cutAt.IsZero() {
+		return rows
+	}
+	kept := rows[:0]
+	for _, row := range rows {
+		var hour string
+		if err := json.Unmarshal(row["hour"], &hour); err != nil {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, hour)
+		if err != nil || !at.Before(w.cutAt) {
+			continue
+		}
+		kept = append(kept, row)
+	}
+	return kept
 }
 
 func resolveBreakdowns(breakdownsFlag, by string) ([]string, error) {
