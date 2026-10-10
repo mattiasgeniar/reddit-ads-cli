@@ -97,6 +97,11 @@ func (c *Client) postRead(path string, body, out any) error {
 	return c.doJSON(http.MethodPost, path, body, out, false)
 }
 
+// postReadURL is postRead against an absolute URL, for a report's next_url.
+func (c *Client) postReadURL(url string, body, out any) error {
+	return c.doJSONURL(http.MethodPost, url, body, out, false)
+}
+
 // GetRaw issues a GET and returns the response body verbatim, for the --json
 // passthrough that must mirror exactly what Reddit sent.
 func (c *Client) GetRaw(path string) (json.RawMessage, error) {
@@ -126,6 +131,10 @@ func (c *Client) Patch(path string, body, out any) error {
 // mutating is true, --dry-run prints the request and returns without sending it; reads
 // (mutating false) always go through, so a dry-run write can still read-modify-write.
 func (c *Client) doJSON(method, path string, body, out any, mutating bool) error {
+	return c.doJSONURL(method, c.base+path, body, out, mutating)
+}
+
+func (c *Client) doJSONURL(method, url string, body, out any, mutating bool) error {
 	var raw []byte
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -136,11 +145,11 @@ func (c *Client) doJSON(method, path string, body, out any, mutating bool) error
 	}
 
 	if c.DryRun && mutating {
-		c.printDryRun(method, path, raw)
+		c.printDryRun(method, strings.TrimPrefix(url, c.base), raw)
 		return nil
 	}
 
-	resp, err := c.do(method, c.base+path, raw)
+	resp, err := c.do(method, url, raw)
 	if err != nil {
 		return err
 	}

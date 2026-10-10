@@ -81,7 +81,8 @@ reddit-ads ads get ad_abc123 --json
 ## Reporting
 
 `POST`-backed report. Dates are `YYYY-MM-DD` (`--to` is exclusive) or full
-`YYYY-MM-DDTHH:00:00Z` timestamps.
+`YYYY-MM-DDTHH:00:00Z` timestamps. `--json` holds every page's rows. A window shorter
+than 24 hours needs `--by hour`.
 
 ```bash
 # default fields: IMPRESSIONS,CLICKS,CTR,SPEND,CPC
