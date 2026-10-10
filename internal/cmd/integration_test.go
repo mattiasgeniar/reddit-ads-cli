@@ -470,3 +470,87 @@ func TestWriteAbortsWhenUserDeclinesConfirmation(t *testing.T) {
 		t.Errorf("declined confirmation still sent %d requests", hits)
 	}
 }
+
+func TestReportFollowsEveryPageWithTheSameBody(t *testing.T) {
+	var bodies []string
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/ad_accounts/acc_1/reports" {
+			http.NotFound(w, r)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		if r.URL.Query().Get("page.token") == "" {
+			fmt.Fprintf(w, `{"data":{"metrics":[{"clicks":2,"spend":1000000}]},"pagination":{"next_url":%q}}`,
+				srv.URL+"/ad_accounts/acc_1/reports?page.token=p2")
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":{"metrics":[{"clicks":3,"spend":2000000}]},"pagination":{"next_url":null}}`)
+	}))
+	defer srv.Close()
+
+	out, err := runCLI(t, srv, "", "report", "--from", "2026-10-09", "--to", "2026-10-10",
+		"--by", "adgroup", "--fields", "CLICKS,SPEND", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Data struct {
+			Metrics []struct {
+				Clicks int `json:"clicks"`
+			} `json:"metrics"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if len(got.Data.Metrics) != 2 || got.Data.Metrics[1].Clicks != 3 {
+		t.Errorf("metrics = %+v, want the rows of both pages", got.Data.Metrics)
+	}
+	if len(bodies) != 2 || bodies[0] != bodies[1] {
+		t.Errorf("page requests = %q, want two POSTs with the same body", bodies)
+	}
+}
+
+func TestReportSendsTheExclusiveToAsRedditsEndsAt(t *testing.T) {
+	var sent map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		sent = body["data"]
+		_, _ = io.WriteString(w, `{"data":{"metrics":[]}}`)
+	}))
+	defer srv.Close()
+
+	if _, err := runCLI(t, srv, "", "report", "--from", "2026-10-08", "--to", "2026-10-09", "--json"); err != nil {
+		t.Fatal(err)
+	}
+	if sent["starts_at"] != "2026-10-08T00:00:00Z" || sent["ends_at"] != "2026-10-08T00:00:00Z" {
+		t.Errorf("one day sent as %v .. %v, want ends_at 24h before --to", sent["starts_at"], sent["ends_at"])
+	}
+}
+
+func TestReportCutsAWindowShorterThanADayByHour(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":{"metrics":[
+			{"hour":"2026-10-09T20:00:00+00:00","spend":1000000},
+			{"hour":"2026-10-09T21:00:00+00:00","spend":2000000},
+			{"hour":"2026-10-09T22:00:00+00:00","spend":4000000}]}}`)
+	}))
+	defer srv.Close()
+
+	out, err := runCLI(t, srv, "", "report", "--from", "2026-10-09T20:00:00Z", "--to", "2026-10-09T22:00:00Z",
+		"--by", "hour", "--fields", "SPEND")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "2.00") || strings.Contains(out, "4.00") {
+		t.Errorf("want the 20:00 and 21:00 rows only; got:\n%s", out)
+	}
+
+	if _, err := runCLI(t, srv, "", "report", "--from", "2026-10-09T20:00:00Z", "--to", "2026-10-09T22:00:00Z",
+		"--fields", "SPEND"); err == nil {
+		t.Error("a sub-day window without --by hour should be refused, not answered with the whole day")
+	}
+}

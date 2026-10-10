@@ -162,7 +162,9 @@ reddit-ads report --from 2026-07-01 --to 2026-07-25 \
 Dates are `YYYY-MM-DD` (expanded to hour granularity; `--to` is exclusive) or a full
 `YYYY-MM-DDTHH:00:00Z` timestamp. Default fields are `IMPRESSIONS,CLICKS,CTR,SPEND,CPC`.
 Money fields print as dollars in the table; `--json` gives you raw microcurrency
-exactly as Reddit returns it. Metrics can take up to six hours to stabilize.
+exactly as Reddit returns it, with the rows of every page in `data.metrics`. Metrics can
+take up to six hours to stabilize. A window shorter than 24 hours needs `--by hour`:
+Reddit only reports whole days, so the CLI fetches one and cuts it by hour.
 
 #### `--format=spend`, for piping into something else
 

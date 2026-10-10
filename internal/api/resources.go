@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 )
 
@@ -176,7 +177,9 @@ func (c *Client) SuggestCommunitiesRaw(names []string) ([]json.RawMessage, error
 }
 
 // ReportRequest is the body of POST /ad_accounts/{id}/reports. Dates must be
-// YYYY-MM-DDTHH:00:00Z (hourly granularity).
+// YYYY-MM-DDTHH:00:00Z (hourly granularity). Reddit reads ends_at as the start of the
+// last 24 hours it includes, so a window that ends at T is sent with ends_at = T - 24h
+// (the report command does this for its exclusive --to).
 type ReportRequest struct {
 	StartsAt   string   `json:"starts_at"`
 	EndsAt     string   `json:"ends_at"`
@@ -185,27 +188,45 @@ type ReportRequest struct {
 	TimeZoneID string   `json:"time_zone_id,omitempty"`
 }
 
-// Report runs a report and returns the raw metric rows. Each row is a flat object
-// keyed by the lowercase field name plus any breakdown keys.
-func (c *Client) Report(accountID string, req ReportRequest) ([]map[string]json.RawMessage, error) {
-	var env struct {
-		Data struct {
-			Metrics []map[string]json.RawMessage `json:"metrics"`
-		} `json:"data"`
-	}
-	if err := c.postRead("/ad_accounts/"+accountID+"/reports", map[string]any{"data": req}, &env); err != nil {
-		return nil, err
-	}
-	return env.Data.Metrics, nil
+// ReportResult is a report's rows across every page, plus when Reddit last updated them.
+type ReportResult struct {
+	Metrics          []map[string]json.RawMessage `json:"metrics"`
+	MetricsUpdatedAt string                       `json:"metrics_updated_at,omitempty"`
 }
 
-// ReportRaw runs a report and returns the response body verbatim for --json.
-func (c *Client) ReportRaw(accountID string, req ReportRequest) (json.RawMessage, error) {
-	var raw json.RawMessage
-	if err := c.postRead("/ad_accounts/"+accountID+"/reports", map[string]any{"data": req}, &raw); err != nil {
+// reportPage is one page of a report. Reports return 50 rows a page, and the next page
+// is fetched by POSTing the same body to pagination.next_url (a GET answers 404).
+type reportPage struct {
+	Data       ReportResult `json:"data"`
+	Pagination struct {
+		NextURL string `json:"next_url"`
+	} `json:"pagination"`
+}
+
+// Report runs a report and returns every metric row across all pages. Each row is a
+// flat object keyed by the lowercase field name plus any breakdown keys.
+func (c *Client) Report(accountID string, req ReportRequest) (*ReportResult, error) {
+	body := map[string]any{"data": req}
+	var all reportPage
+	if err := c.postRead("/ad_accounts/"+accountID+"/reports", body, &all); err != nil {
 		return nil, err
 	}
-	return raw, nil
+	next := all.Pagination.NextURL
+	for pages := 1; next != ""; pages++ {
+		if pages >= maxListPages {
+			return nil, fmt.Errorf("pagination exceeded %d pages; aborting to avoid a loop", maxListPages)
+		}
+		if err := c.sameHostAsBase(next); err != nil {
+			return nil, err
+		}
+		var page reportPage
+		if err := c.postReadURL(next, body, &page); err != nil {
+			return nil, err
+		}
+		all.Data.Metrics = append(all.Data.Metrics, page.Data.Metrics...)
+		next = page.Pagination.NextURL
+	}
+	return &all.Data, nil
 }
 
 // IsNotFound reports whether err is a 404 from the API.
